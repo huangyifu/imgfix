@@ -191,6 +191,7 @@
                 <!-- <button id="saveBtn">导出遮罩</button> -->
                 <!-- <button id="uploadImageBtn">上传图片</button> -->
                 <button id="uploadImageMaskBtn">上传遮罩</button>
+                <button id="uploadImageLamaBtn">Lama</button>
             </div><div class="all-controls">
                 <button id="moveLeft">← 左移</button>
                 <button id="moveUp">↑ 上移</button>
@@ -304,6 +305,11 @@
                 const uploadImageMaskBtn = document.getElementById('uploadImageMaskBtn');
                 if (uploadImageMaskBtn) {
                     uploadImageMaskBtn.addEventListener('click', () => this.uploadMask());
+                }
+
+                const uploadImageLamaBtn = document.getElementById('uploadImageLamaBtn');
+                if (uploadImageLamaBtn) {
+                    uploadImageLamaBtn.addEventListener('click', () => this.uploadLama());
                 }
 
                 // 添加撤销按钮事件
@@ -581,6 +587,70 @@
                         this.showToast('上传出错: ' + error.message);
                     }
                 }, 'image/png');
+            }
+
+            // 添加Lama图像修复方法
+            async uploadLama() {
+                if (!this.maskCanvas || !this.imageMD5) {
+                    this.showToast('请先选择图片并创建遮罩');
+                    return;
+                }
+
+                await this.uploadMask();
+
+                this.showToast('开始Lama图像修复...');
+
+                try {
+                    const response = await fetch('/lama', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            md5: this.imageMD5
+                        })
+                    });
+
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        // 创建新的Image对象来显示修复后的图片
+                        const lamaImage = new Image();
+                        lamaImage.onload = () => {
+                            // 保存当前的遮罩
+                            const tempCanvas = document.createElement('canvas');
+                            tempCanvas.width = this.maskCanvas.width;
+                            tempCanvas.height = this.maskCanvas.height;
+                            const tempCtx = tempCanvas.getContext('2d');
+                            tempCtx.drawImage(this.maskCanvas, 0, 0);
+
+                            // 下载遮罩文件
+                            const link = document.createElement('a');
+                            link.download = `${this.imageMD5}_lama.jpg`;
+                            link.href = result.output_path;
+                            link.click();
+
+                            // 保存到手机相册
+                            // this.originalImage = lamaImage;
+                            // this.canvas.width = lamaImage.width;
+                            // this.canvas.height = lamaImage.height;
+                            // this.maskCanvas.width = lamaImage.width;
+                            // this.maskCanvas.height = lamaImage.height;
+
+                            // // 恢复遮罩
+                            // this.maskCtx.drawImage(tempCanvas, 0, 0);
+
+                            // // 重绘画布
+                            // this.redrawCanvas();
+                            this.showToast('图像修复完成');
+                        };
+                        lamaImage.src = `image/${this.imageMD5}_lama.jpg?t=${new Date().getTime()}`; // 添加时间戳防止缓存
+                    } else {
+                        this.showToast('修复失败: ' + result.message);
+                    }
+                } catch (error) {
+                    this.showToast('修复出错: ' + error.message);
+                }
             }
 
             handleTouchStart(e) {

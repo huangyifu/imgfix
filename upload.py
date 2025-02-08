@@ -6,6 +6,9 @@ from urllib.parse import parse_qs, urlparse
 from email.parser import BytesParser
 from io import BytesIO
 import mimetypes
+import cv2
+import numpy as np
+import torch
 
 class UploadHandler(BaseHTTPRequestHandler):
     def get_content_type(self, path):
@@ -110,12 +113,191 @@ class UploadHandler(BaseHTTPRequestHandler):
                     
         return form_data
 
+    def handle_lama_request(self):
+        """此注释保留!
+        处理 /lama 路径的请求
+        1.查找图片[md5].[jpg,png,gif]
+        2.查找mask[md5]_mask.[jpg,png,gif]
+        3.参考lama/bin/to_jit.py 调用lama推理,推理结果的图片保存同目录下,文件名是[md5]_lama.jpg
+        4.返回结果
+        """
+        print("[DEBUG] 开始处理lama请求...")
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        try:
+            # 尝试解析 JSON 数据
+            print(f"[DEBUG] 接收到的原始数据: {post_data}")
+            data = json.loads(post_data)
+            if 'md5' not in data:
+                print("[ERROR] 缺少md5参数")
+                return {
+                    'status': 'error',
+                    'message': '缺少 md5 参数'
+                }
+            
+            md5 = data['md5']
+            print(f"[DEBUG] 处理的MD5值: {md5}")
+            image_dir = 'image/'
+            
+            # 1. 查找原始图片
+            original_image = None
+            mask_image = None
+            for ext in ['jpg', 'png', 'gif']:
+                img_path = os.path.join(image_dir, f"{md5}.{ext}")
+                print(f"[DEBUG] 尝试查找原始图片: {img_path}")
+                if os.path.exists(img_path):
+                    original_image = img_path
+                    print(f"[DEBUG] 找到原始图片: {original_image}")
+                    break
+            
+            # 2. 查找mask图片
+            for ext in ['jpg', 'png', 'gif']:
+                mask_path = os.path.join(image_dir, f"{md5}_mask.{ext}")
+                print(f"[DEBUG] 尝试查找mask图片: {mask_path}")
+                if os.path.exists(mask_path):
+                    mask_image = mask_path
+                    print(f"[DEBUG] 找到mask图片: {mask_image}")
+                    break
+            
+            if not original_image or not mask_image:
+                print(f"[ERROR] 图片查找失败 - 原始图片: {original_image}, mask图片: {mask_image}")
+                return {
+                    'status': 'error',
+                    'message': '找不到原始图片或mask图片'
+                }
+            
+            # 3. 调用lama模型进行推理
+            try:
+                print("[DEBUG] 开始加载必要的库...")
+                import torch
+                import cv2
+                import numpy as np
+                
+                # 加载JIT模型
+                model_path = "lama/big-lama/models/best.ckpt.pt"
+                print(f"[DEBUG] 尝试加载模型: {model_path}")
+                if not os.path.exists(model_path):
+                    print("[ERROR] 模型文件不存在")
+                    return {
+                        'status': 'error',
+                        'message': '找不到模型文件'
+                    }
+                
+                device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                print(f"[DEBUG] 使用设备: {device}")
+                model = torch.jit.load(model_path, map_location=device)
+                model.eval()
+                print("[DEBUG] 模型加载成功")
+                
+                # 读取和预处理图片
+                print("[DEBUG] 开始读取和预处理图片...")
+                image = cv2.imread(original_image)
+                print(f"[DEBUG] 原始图片shape: {image.shape if image is not None else 'None'}")
+                
+                # 确保图片尺寸是8的倍数
+                h, w = image.shape[:2]
+                new_h = (h // 8) * 8
+                new_w = (w // 8) * 8
+                if h != new_h or w != new_w:
+                    print(f"[DEBUG] 调整图片尺寸为8的倍数: {w}x{h} -> {new_w}x{new_h}")
+                    image = cv2.resize(image, (new_w, new_h))
+                
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                mask = cv2.imread(mask_image, cv2.IMREAD_GRAYSCALE)
+                print(f"[DEBUG] Mask图片shape: {mask.shape if mask is not None else 'None'}")
+                
+                # 调整mask尺寸以匹配图片
+                if mask.shape[:2] != image.shape[:2]:
+                    print(f"[DEBUG] 调整mask尺寸以匹配原图: {mask.shape[:2]} -> {image.shape[:2]}")
+                    mask = cv2.resize(mask, (image.shape[1], image.shape[0]))
+                
+                # 预处理图片
+                print("[DEBUG] 开始图片预处理...")
+                image = image.astype('float32') / 255.0
+                image = image.transpose(2, 0, 1)
+                image = torch.from_numpy(image).unsqueeze(0).to(device)
+                print(f"[DEBUG] 处理后的图片tensor shape: {image.shape}")
+                
+                # 预处理mask - 确保mask是二值的，且黑色(0)表示要修复的区域
+                print("[DEBUG] 开始mask预处理...")
+                # 首先确保mask是二值的
+                _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+                # 如果mask是白色表示要修复的区域，需要反转
+                if np.mean(mask[mask > 127]) < 127:  # 如果白色部分平均值小于127，说明黑色表示背景(需要反转)
+                    print("[DEBUG] 反转mask，确保黑色表示要修复区域")
+                    mask = 255 - mask
+                
+                mask = mask.astype('float32') / 255.0  # 归一化到0-1
+                mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0).to(device)
+                print(f"[DEBUG] 处理后的mask tensor shape: {mask.shape}")
+                print(f"[DEBUG] mask值的范围: {mask.min().item():.3f} - {mask.max().item():.3f}")
+                print(f"[DEBUG] mask平均值: {mask.mean().item():.3f} (越接近0表示要修复的区域越大)")
+                
+                # 进行推理
+                print("[DEBUG] 开始模型推理...")
+                with torch.no_grad():
+                    output = model(image, mask)
+                print("[DEBUG] 模型推理完成")
+                
+                # 后处理输出
+                print("[DEBUG] 开始后处理输出...")
+                output = output.cpu().numpy()[0]
+                output = output.transpose(1, 2, 0)
+                output = (output * 255).clip(0, 255).astype('uint8')
+                output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
+                
+                # 保存结果
+                output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
+                print(f"[DEBUG] 保存结果到: {output_path}")
+                cv2.imwrite(output_path, output)
+                print("[DEBUG] 结果保存成功")
+                
+                return {
+                    'status': 'success',
+                    'message': '图片修复完成',
+                    'output_path': output_path
+                }
+                
+            except Exception as e:
+                print(f"[ERROR] 模型推理失败: {str(e)}")
+                import traceback
+                print(f"[ERROR] 详细错误信息: {traceback.format_exc()}")
+                return {
+                    'status': 'error',
+                    'message': f'模型推理失败: {str(e)}'
+                }
+            
+        except json.JSONDecodeError:
+            print("[ERROR] JSON解析失败")
+            return {
+                'status': 'error',
+                'message': 'JSON解析失败'
+            }
+        except Exception as e:
+            print(f"[ERROR] 未预期的错误: {str(e)}")
+            import traceback
+            print(f"[ERROR] 详细错误信息: {traceback.format_exc()}")
+            return {
+                'status': 'error',
+                'message': f'处理请求时发生错误: {str(e)}'
+            }
+
     def do_POST(self):
         # 设置响应头
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
+
+        # 解析请求路径
+        parsed_path = urlparse(self.path)
+        
+        # 处理 /lama 路径的请求
+        if parsed_path.path == '/lama':
+            response = self.handle_lama_request()
+            self.wfile.write(json.dumps(response).encode())
+            return
 
         # 确保上传目录存在
         upload_dir = 'image/'
@@ -195,9 +377,25 @@ class UploadHandler(BaseHTTPRequestHandler):
             os.remove(target_path)
 
         try:
+            # 如果是mask图片，需要进行二值化处理
+            if is_mask:
+                print("[DEBUG] 处理mask图片...")
+                # 将二进制内容转换为numpy数组
+                nparr = np.frombuffer(file_item['content'], np.uint8)
+                img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+                
+                # 进行二值化处理
+                _, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+                
+                # 将处理后的图片编码为二进制
+                _, buffer = cv2.imencode(f'.{extension}', img)
+                content = buffer.tobytes()
+            else:
+                content = file_item['content']
+                
             # 保存文件
             with open(target_path, 'wb') as f:
-                f.write(file_item['content'])
+                f.write(content)
             
             response = {
                 'status': 'success',
