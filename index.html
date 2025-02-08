@@ -596,10 +596,7 @@
                     return;
                 }
 
-                await this.uploadMask();
-
                 this.showToast('开始Lama图像修复...');
-
                 try {
                     const response = await fetch('/lama', {
                         method: 'POST',

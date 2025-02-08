@@ -9,6 +9,7 @@ import mimetypes
 import cv2
 import numpy as np
 import torch
+import time
 
 class UploadHandler(BaseHTTPRequestHandler):
     def get_content_type(self, path):
@@ -152,7 +153,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                     break
             
             # 2. 查找mask图片
-            for ext in ['jpg', 'png', 'gif']:
+            for ext in ['png','jpg', 'gif']:
                 mask_path = os.path.join(image_dir, f"{md5}_mask.{ext}")
                 print(f"[DEBUG] 尝试查找mask图片: {mask_path}")
                 if os.path.exists(mask_path):
@@ -166,6 +167,24 @@ class UploadHandler(BaseHTTPRequestHandler):
                     'status': 'error',
                     'message': '找不到原始图片或mask图片'
                 }
+
+            # 检查lama处理后的图片是否存在，且时间戳符合要求
+            lama_output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
+            if os.path.exists(lama_output_path):
+                print(f"[DEBUG] 找到已存在的lama处理结果: {lama_output_path}")
+                lama_time = os.path.getmtime(lama_output_path)
+                mask_time = os.path.getmtime(mask_image)
+                current_time = time.time()
+                
+                if lama_time > mask_time and lama_time <= current_time:
+                    print(f"[DEBUG] 使用已存在的lama处理结果（lama时间: {time.ctime(lama_time)}, mask时间: {time.ctime(mask_time)}）")
+                    return {
+                        'status': 'success',
+                        'message': '使用已存在的图片修复结果',
+                        'output_path': lama_output_path
+                    }
+                else:
+                    print(f"[DEBUG] 已存在的lama结果不满足时间条件，将重新处理")
             
             # 3. 调用lama模型进行推理
             try:
