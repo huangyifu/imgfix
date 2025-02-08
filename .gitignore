@@ -4,3 +4,4 @@ image/
 __pycache__/
 *.py[cod]
 *$py.class
+big-lama/models/

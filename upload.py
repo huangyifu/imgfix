@@ -194,7 +194,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 import numpy as np
                 
                 # 加载JIT模型
-                model_path = "lama/big-lama/models/best.ckpt.pt"
+                model_path = "big-lama/models/best.ckpt.pt"
                 print(f"[DEBUG] 尝试加载模型: {model_path}")
                 if not os.path.exists(model_path):
                     print("[ERROR] 模型文件不存在")
