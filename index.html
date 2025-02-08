@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>图片涂抹工具</title>
+    <script src="spark-md5.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 0 15px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .controls {
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            flex-shrink: 0;
+        }
+
+        .brush-controls {
+            margin-top: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .canvas-container {
+            position: relative;
+            overflow: auto;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 10px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            touch-action: none;
+        }
+
+        button {
+            padding: 4px 8px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            min-width: 40px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        input[type="range"] {
+            width: 200px;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .direction-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .horizontal-controls {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+        }
+        .horizontal-controls button {
+            flex: 1;
+        }
+
+        .all-controls {
+            display: flex;
+            gap: 5px;
+            margin-top: 10px;
+            flex-wrap: nowrap;
+        }
+
+        .all-controls button {
+            flex: 1;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 5px auto;
+                padding: 0 5px;
+            }
+
+            .controls {
+                padding: 5px;
+                margin-bottom: 5px;
+            }
+
+            .brush-controls {
+                flex-direction: row;
+                align-items: center;
+                gap: 5px;
+                margin-top: 5px;
+            }
+
+            input[type="range"] {
+                width: 100px;
+            }
+
+            button {
+                width: auto;
+                font-size: 12px;
+                padding: 4px;
+            }
+
+            .all-controls {
+                flex-direction: row;
+                gap: 3px;
+            }
+
+            .all-controls button {
+                padding: 4px 2px;
+                min-width: 30px;
+            }
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 4px;
+            z-index: 1000;
+            display: none;
+            animation: fadeInOut 3s ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="controls">
+            <input type="file" id="imageInput" accept="image/*">
+            <div class="brush-controls">
+                <label>画笔大小: <span id="brushSize">10</span>px</label>
+                <input type="range" id="brushSizeInput" min="1" max="500" value="10">
+                <button id="undoBtn">撤销</button>
+                <button id="clearBtn">清除</button>
+                <!-- <button id="saveBtn">导出遮罩</button> -->
+                <!-- <button id="uploadImageBtn">上传图片</button> -->
+                <button id="uploadImageMaskBtn">上传遮罩</button>
+            </div><div class="all-controls">
+                <button id="moveLeft">← 左移</button>
+                <button id="moveUp">↑ 上移</button>
+                <button id="moveDown">↓ 下移</button>
+                <button id="moveRight">→ 右移</button>
+                <button id="zoomIn">放大</button>
+                <button id="zoomOut">缩小</button>
+                <button id="resetZoom">重置</button>
+            </div>
+        </div>
+        <div class="canvas-container">
+            <canvas id="imageCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">
+        <!-- Toast content will be dynamically added here -->
+    </div>
+
+    <script>
+        class ImageMaskEditor {
+            constructor() {
+                this.canvas = document.getElementById('imageCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                // 创建遮罩画布
+                this.maskCanvas = document.createElement('canvas');
+                this.maskCtx = this.maskCanvas.getContext('2d');
+                this.isDrawing = false;
+                this.isPanning = false;  // 是否正在平移
+                this.lastTouchDistance = 0;  // 用于双指缩放
+                this.scale = 1;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.lastX = 0;
+                this.lastY = 0;
+                this.brushSize = 10;
+                this.originalImage = null;
+                this.touchStartTime = 0;  // 用于区分点击和拖动
+                this.imageMD5 = null;  // 存储原图的MD5值
+                this.isNewMask = false;  // 新增：标记是否是新的遮罩
+                // 添加历史记录数组
+                this.history = [];
+                this.maxHistoryLength = 50; // 最大历史记录数
+
+                // 创建Toast提示元素
+                this.toast = document.createElement('div');
+                this.toast.className = 'toast';
+                document.body.appendChild(this.toast);
+
+                this.setupEventListeners();
+            }
+
+            setupEventListeners() {
+                // 文件输入处理
+                document.getElementById('imageInput').addEventListener('change', (e) => this.loadImage(e));
+
+                // 画笔大小控制
+                document.getElementById('brushSizeInput').addEventListener('input', (e) => {
+                    this.brushSize = parseInt(e.target.value);
+                    document.getElementById('brushSize').textContent = this.brushSize;
+                    // 添加预览圆圈
+                    this.showBrushPreview(e);
+                });
+
+                // 添加鼠标移动时的画笔预览
+                this.canvas.addEventListener('mousemove', (e) => {
+                    if (!this.isDrawing) {
+                        this.showBrushPreview(e);
+                    }
+                });
+
+                // 鼠标离开时清除预览
+                this.canvas.addEventListener('mouseout', () => {
+                    this.redrawCanvas();
+                });
+
+                // 绘画事件
+                this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
+                this.canvas.addEventListener('pointermove', (e) => this.draw(e));
+                this.canvas.addEventListener('pointerup', () => this.stopDrawing());
+                this.canvas.addEventListener('pointerout', () => this.stopDrawing());
+
+                // 缩放控制
+                document.getElementById('zoomIn').addEventListener('click', () => this.zoom(1.2));
+                document.getElementById('zoomOut').addEventListener('click', () => this.zoom(0.8));
+                document.getElementById('resetZoom').addEventListener('click', () => this.resetZoom());
+
+                // 保存按钮 - 添加存在性检查
+                const saveBtn = document.getElementById('saveBtn');
+                if (saveBtn) {
+                    saveBtn.addEventListener('click', () => this.saveMask());
+                }
+
+                // 添加触摸事件处理
+                this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+                this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+                this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+
+                // 方向控制
+                document.getElementById('moveLeft').addEventListener('click', () => this.move('left'));
+                document.getElementById('moveRight').addEventListener('click', () => this.move('right'));
+                document.getElementById('moveUp').addEventListener('click', () => this.move('up'));
+                document.getElementById('moveDown').addEventListener('click', () => this.move('down'));
+
+                // 上传按钮事件 - 添加存在性检查
+                const uploadImageBtn = document.getElementById('uploadImageBtn');
+                if (uploadImageBtn) {
+                    uploadImageBtn.addEventListener('click', () => this.uploadImage());
+                }
+                
+                const uploadImageMaskBtn = document.getElementById('uploadImageMaskBtn');
+                if (uploadImageMaskBtn) {
+                    uploadImageMaskBtn.addEventListener('click', () => this.uploadMask());
+                }
+
+                // 添加撤销按钮事件
+                document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+
+                // 添加清除按钮事件
+                document.getElementById('clearBtn').addEventListener('click', () => this.clearMask());
+            }
+
+            // 计算文件的MD5值
+            async calculateMD5(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const spark = new SparkMD5.ArrayBuffer();
+                        spark.append(e.target.result);
+                        resolve(spark.end());
+                    };
+                    reader.onerror = function(e) {
+                        reject('Error calculating MD5');
+                    };
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+            async loadImage(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                try {
+                    // 计算并存储MD5值
+                    this.imageMD5 = await this.calculateMD5(file);
+                    
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        this.originalImage = new Image();
+                        this.originalImage.onload = async () => {
+                            this.canvas.width = this.originalImage.width;
+                            this.canvas.height = this.originalImage.height;
+                            // 设置遮罩画布尺寸
+                            this.maskCanvas.width = this.originalImage.width;
+                            this.maskCanvas.height = this.originalImage.height;
+                            
+                            // 尝试从服务器加载遮罩
+                            try {
+                                const maskResponse = await fetch(`image/${this.imageMD5}_mask.png`);
+                                if (maskResponse.ok) {
+                                    // 如果遮罩存在，加载它
+                                    const maskBlob = await maskResponse.blob();
+                                    const maskUrl = URL.createObjectURL(maskBlob);
+                                    const maskImage = new Image();
+                                    maskImage.onload = () => {
+                                        this.maskCtx.drawImage(maskImage, 0, 0);
+                                        URL.revokeObjectURL(maskUrl);
+                                        this.isNewMask = false;  // 存在遮罩，标记为false
+                                        this.redrawCanvas();
+                                    };
+                                    maskImage.src = maskUrl;
+                                } else {
+                                    // 如果遮罩不存在，创建新的黑色遮罩
+                                    this.maskCtx.fillStyle = '#000';
+                                    this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
+                                    this.isNewMask = true;  // 不存在遮罩，标记为true
+                                }
+                            } catch (error) {
+                                console.error('加载遮罩失败:', error);
+                                // 创建新的黑色遮罩
+                                this.maskCtx.fillStyle = '#000';
+                                this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
+                                this.isNewMask = true;  // 加载失败，标记为true
+                            }
+                            
+                            // 计算适应屏幕的缩放比例
+                            const container = this.canvas.parentElement;
+                            const containerWidth = container.clientWidth;
+                            const containerHeight = container.clientHeight;
+                            const scaleX = (containerWidth - 40) / this.canvas.width; // 留出一些边距
+                            const scaleY = (containerHeight - 40) / this.canvas.height;
+                            this.scale = Math.min(scaleX, scaleY, 1); // 不超过原始大小
+
+                            // 计算居中位置
+                            this.offsetX = (containerWidth - this.canvas.width * this.scale) / 2;
+                            this.offsetY = (containerHeight - this.canvas.height * this.scale) / 2;
+
+                            this.redrawCanvas();
+                        };
+                        this.originalImage.src = e.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                } catch (error) {
+                    this.showToast('加载图片出错: ' + error.message);
+                }
+            }
+
+            redrawCanvas() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                // 保存当前状态
+                this.ctx.save();
+
+                // 应用缩放和平移
+                this.ctx.translate(this.offsetX, this.offsetY);
+                this.ctx.scale(this.scale, this.scale);
+
+                // 绘制原始图片
+                if (this.originalImage) {
+                    this.ctx.drawImage(this.originalImage, 0, 0);
+                    // 叠加遮罩
+                    this.ctx.globalAlpha = 0.5;
+                    this.ctx.drawImage(this.maskCanvas, 0, 0);
+                }
+
+                // 恢复状态
+                this.ctx.restore();
+            }
+
+            startDrawing(e) {
+                this.isDrawing = true;
+                const pos = this.getMousePos(e);
+                this.lastX = pos.x;
+                this.lastY = pos.y;
+                // 开始绘制前保存状态
+                this.saveToHistory();
+                // 立即绘制一个点
+                this.drawPoint(pos.x, pos.y);
+            }
+
+            draw(e) {
+                if (!this.isDrawing) return;
+
+                const pos = this.getMousePos(e);
+                this.drawPoint(pos.x, pos.y);
+                
+                // 连接上一个点和当前点，使线条更流畅
+                this.maskCtx.beginPath();
+                this.maskCtx.strokeStyle = '#fff';
+                this.maskCtx.lineWidth = (this.brushSize * 2) / this.scale;
+                this.maskCtx.lineCap = 'round';
+                this.maskCtx.moveTo(this.lastX, this.lastY);
+                this.maskCtx.lineTo(pos.x, pos.y);
+                this.maskCtx.stroke();
+
+                this.lastX = pos.x;
+                this.lastY = pos.y;
+                this.redrawCanvas();
+            }
+
+            drawPoint(x, y) {
+                // 在遮罩画布上绘制白色圆点
+                this.maskCtx.fillStyle = '#fff';
+                this.maskCtx.beginPath();
+                this.maskCtx.arc(x, y, this.brushSize / this.scale, 0, Math.PI * 2);
+                this.maskCtx.fill();
+                this.redrawCanvas();
+            }
+
+            stopDrawing() {
+                this.isDrawing = false;
+            }
+
+            getMousePos(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                return {
+                    x: (e.clientX - rect.left - this.offsetX) / this.scale,
+                    y: (e.clientY - rect.top - this.offsetY) / this.scale
+                };
+            }
+
+            zoom(factor) {
+                const oldScale = this.scale;
+                this.scale *= factor;
+                this.scale = Math.min(Math.max(0.1, this.scale), 10);
+
+                // 调整偏移以保持鼠标位置不变
+                const canvasCenterX = this.canvas.width / 2;
+                const canvasCenterY = this.canvas.height / 2;
+
+                this.offsetX -= (canvasCenterX * (this.scale - oldScale));
+                this.offsetY -= (canvasCenterY * (this.scale - oldScale));
+
+                this.redrawCanvas();
+            }
+
+            resetZoom() {
+                this.scale = 1;
+                this.offsetX = 0;
+                this.offsetY = 0;
+                this.redrawCanvas();
+            }
+
+            async saveMask() {
+                if (!this.imageMD5) {
+                    this.showToast('请先选择图片');
+                    return;
+                }
+
+                // 下载遮罩文件
+                const link = document.createElement('a');
+                link.download = `${this.imageMD5}_mask.png`;
+                link.href = this.maskCanvas.toDataURL('image/png', 1.0);
+                link.click();
+            }
+
+            // 显示Toast提示
+            showToast(message) {
+                this.toast.textContent = message;
+                this.toast.style.display = 'block';
+                
+                // 3秒后自动隐藏
+                setTimeout(() => {
+                    this.toast.style.display = 'none';
+                }, 3000);
+            }
+
+            // 修改uploadImage方法
+            async uploadImage() {
+                if (!this.originalImage) {
+                    this.showToast('请先选择一张图片');
+                    return;
+                }
+                this.showToast('开始图片上传 ... ');
+                // 将原始图片转换为 Blob
+                const response = await fetch(this.originalImage.src);
+                const blob = await response.blob();
+
+                const formData = new FormData();
+                formData.append('file', blob, 'image.png');
+                formData.append('md5', this.imageMD5);  // 添加MD5值
+
+                try {
+                    const response = await fetch('upload.php', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+                    if (result.status === 'success') {
+                        this.showToast('图片上传成功');
+                    } else {
+                        this.showToast('上传失败: ' + result.message);
+                    }
+                } catch (error) {
+                    this.showToast('上传出错: ' + error.message);
+                }
+            }
+
+            // 修改uploadMask方法
+            async uploadMask() {
+                if (!this.maskCanvas || !this.imageMD5) {
+                    this.showToast('请先选择图片并创建遮罩');
+                    return;
+                }
+                if (this.isNewMask) {
+                    //上传原始图片
+                    await this.uploadImage();
+                }
+
+                // 将遮罩画布转换为 Blob
+                this.maskCanvas.toBlob(async (blob) => {
+                    const formData = new FormData();
+                    formData.append('file', blob, 'mask.png');
+                    formData.append('md5', this.imageMD5);  // 添加MD5值
+                    this.showToast('开始遮罩上传 ... ');
+                    try {
+                        const response = await fetch('upload.php', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const result = await response.json();
+                        if (result.status === 'success') {
+                            this.showToast('遮罩上传成功');
+                        } else {
+                            this.showToast('上传失败: ' + result.message);
+                        }
+                    } catch (error) {
+                        this.showToast('上传出错: ' + error.message);
+                    }
+                }, 'image/png');
+            }
+
+            handleTouchStart(e) {
+                this.touchStartTime = Date.now();
+                if (e.touches.length === 2) {
+                    // 双指操作 - 准备缩放
+                    this.lastTouchDistance = this.getTouchDistance(e.touches);
+                } else if (e.touches.length === 1) {
+                    // 单指操作 - 准备绘制或平移
+                    const touch = e.touches[0];
+                    const pos = this.getMousePos(touch);
+                    this.lastX = pos.x;
+                    this.lastY = pos.y;
+                    // 开始绘制前保存状态
+                    this.saveToHistory();
+                    // 立即绘制一个点
+                    this.drawPoint(pos.x, pos.y);
+                }
+                e.preventDefault();
+            }
+
+            handleTouchMove(e) {
+                if (e.touches.length === 2) {
+                    // 双指缩放
+                    const distance = this.getTouchDistance(e.touches);
+                    const scale = distance / this.lastTouchDistance;
+                    this.zoom(scale);
+                    this.lastTouchDistance = distance;
+                } else if (e.touches.length === 1) {
+                    const touch = e.touches[0];
+                    const pos = this.getMousePos(touch);
+                    const timeDiff = Date.now() - this.touchStartTime;
+
+                    if (timeDiff > 200) {  // 增加到200ms，减少误触
+                        // 平移画布
+                        const dx = pos.x - this.lastX;
+                        const dy = pos.y - this.lastY;
+                        this.offsetX += dx * this.scale;
+                        this.offsetY += dy * this.scale;
+                        this.redrawCanvas();
+                    } else {
+                        // 绘制并连接线条
+                        this.maskCtx.beginPath();
+                        this.maskCtx.strokeStyle = '#fff';
+                        this.maskCtx.lineWidth = (this.brushSize * 2) / this.scale;
+                        this.maskCtx.lineCap = 'round';
+                        this.maskCtx.moveTo(this.lastX, this.lastY);
+                        this.maskCtx.lineTo(pos.x, pos.y);
+                        this.maskCtx.stroke();
+                        this.drawPoint(pos.x, pos.y);
+                    }
+                    this.lastX = pos.x;
+                    this.lastY = pos.y;
+                }
+                e.preventDefault();
+            }
+
+            handleTouchEnd(e) {
+                if (e.touches.length === 0) {
+                    this.isDrawing = false;
+                    this.isPanning = false;
+                }
+                e.preventDefault();
+            }
+
+            getTouchDistance(touches) {
+                const dx = touches[0].clientX - touches[1].clientX;
+                const dy = touches[0].clientY - touches[1].clientY;
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            move(direction) {
+                if (!this.originalImage) return;
+                
+                const moveDistance = {
+                    left: -this.canvas.width * 0.01,
+                    right: this.canvas.width * 0.01,
+                    up: -this.canvas.height * 0.01,
+                    down: this.canvas.height * 0.01
+                };
+
+                const distance = moveDistance[direction];
+                if (direction === 'left' || direction === 'right') {
+                    this.offsetX += distance;
+                } else {
+                    this.offsetY += distance;
+                }
+
+                this.redrawCanvas();
+            }
+
+            showBrushPreview(e) {
+                const pos = this.getMousePos(e);
+                this.redrawCanvas();
+                
+                // 在当前鼠标位置绘制预览圆圈
+                this.ctx.save();
+                this.ctx.translate(this.offsetX, this.offsetY);
+                this.ctx.scale(this.scale, this.scale);
+                
+                this.ctx.beginPath();
+                this.ctx.arc(pos.x, pos.y, this.brushSize / this.scale, 0, Math.PI * 2);
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                this.ctx.lineWidth = 1 / this.scale;
+                this.ctx.stroke();
+                
+                this.ctx.restore();
+            }
+
+            // 保存当前状态到历史记录
+            saveToHistory() {
+                const imageData = this.maskCtx.getImageData(0, 0, this.maskCanvas.width, this.maskCanvas.height);
+                this.history.push(imageData);
+                if (this.history.length > this.maxHistoryLength) {
+                    this.history.shift(); // 移除最老的记录
+                }
+            }
+
+            // 撤销功能
+            undo() {
+                if (this.history.length > 0) {
+                    const lastState = this.history.pop();
+                    this.maskCtx.putImageData(lastState, 0, 0);
+                    this.redrawCanvas();
+                }
+            }
+
+            // 清除遮罩功能
+            clearMask() {
+                if (!this.originalImage) {
+                    alert('请先选择图片');
+                    return;
+                }
+                
+                // 保存当前状态到历史记录
+                this.saveToHistory();
+                
+                // 清除遮罩为黑色
+                this.maskCtx.fillStyle = '#000';
+                this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
+                this.redrawCanvas();
+            }
+        }
+
+        // 初始化应用
+        window.addEventListener('load', () => {
+            new ImageMaskEditor();
+        });
+    </script>
+</body>
+
+</html>
+<!-- 功能描述(不得删除此段，每次更新后，请更新以下功能描述)：
+1. 图片选择和显示：
+   - 支持选择本地图片文件
+   - 首次加载自动缩放以显示完整图片
+   - 自动居中显示
+   - 保持原始图片比例
+
+2. 涂抹功能：
+   - 可调节画笔大小（1-500像素）
+   - 支持鼠标和触摸屏操作
+   - 涂抹区域显示为半透明效果
+   - 支持撤销操作（最多50步）
+   - 支持一键清除遮罩
+
+3. 缩放和平移控制：
+   - 支持放大/缩小查看
+   - 可重置回原始大小
+   - 缩放范围：0.1x - 10x
+   - 支持画布拖动平移
+   - 支持触摸手势操作
+   - 支持方向键精确移动（每次移动1%）
+
+4. 遮罩导出：
+   - 导出为PNG格式
+   - 涂抹区域为白色
+   - 未涂抹区域为黑色
+   - 保持原图尺寸
+   - 纯黑白两色，无透明度
+
+5. 移动端支持：
+   - 响应式界面设计
+   - 触摸屏绘制支持
+   - 自适应屏幕大小
+   - 手势操作支持：
+     * 短按拖动：涂抹
+     * 长按拖动：移动画布
+     * 双指缩放：调整画布大小
+
+使用说明：
+1. 点击选择图片上传，图片会自动缩放显示
+2. 使用滑块调节画笔大小
+3. 在图片上按住鼠标或触摸拖动进行涂抹
+4. 使用缩放按钮或手势调整视图
+5. 使用方向按钮精确移动画布位置
+6. 长按拖动可自由移动画布
+7. 点击"撤销"可以回退上一步操作
+8. 点击"清除"可以清除所有遮罩
+9. 点击"保存遮罩"导出黑白遮罩图片
+
+-->
