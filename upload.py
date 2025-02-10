@@ -270,7 +270,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 output_image = Image.fromarray(output)
                 output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
                 print(f"[DEBUG] 保存结果到: {output_path}")
-                output_image.save(output_path, quality=95)
+                output_image.save(output_path, quality=90)
                 print("[DEBUG] 结果保存成功")
                 
                 return {

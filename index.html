@@ -347,11 +347,51 @@
                     reader.onload = async (e) => {
                         this.originalImage = new Image();
                         this.originalImage.onload = async () => {
-                            this.canvas.width = this.originalImage.width;
-                            this.canvas.height = this.originalImage.height;
+                            // 添加图片尺寸限制逻辑
+                            let width = this.originalImage.width;
+                            let height = this.originalImage.height;
+                            
+                            // 检查是否需要缩放
+                            const MAX_SIZE = 1920;
+                            if (width > MAX_SIZE || height > MAX_SIZE) {
+                                if (width > height) {
+                                    // 宽度为主要维度
+                                    height = Math.round((height * MAX_SIZE) / width);
+                                    width = MAX_SIZE;
+                                } else {
+                                    // 高度为主要维度
+                                    width = Math.round((width * MAX_SIZE) / height);
+                                    height = MAX_SIZE;
+                                }
+                                
+                                // 创建临时画布进行缩放
+                                const tempCanvas = document.createElement('canvas');
+                                tempCanvas.width = width;
+                                tempCanvas.height = height;
+                                const tempCtx = tempCanvas.getContext('2d');
+                                
+                                // 使用高质量的图像缩放
+                                tempCtx.imageSmoothingEnabled = true;
+                                tempCtx.imageSmoothingQuality = 'high';
+                                tempCtx.drawImage(this.originalImage, 0, 0, width, height);
+                                
+                                // 创建新的Image对象存储缩放后的图片
+                                const scaledImage = new Image();
+                                scaledImage.src = tempCanvas.toDataURL('image/jpeg', 0.95);
+                                
+                                await new Promise(resolve => {
+                                    scaledImage.onload = resolve;
+                                });
+                                
+                                this.originalImage = scaledImage;
+                            }
+                            
+                            // 设置画布尺寸为缩放后的尺寸
+                            this.canvas.width = width;
+                            this.canvas.height = height;
                             // 设置遮罩画布尺寸
-                            this.maskCanvas.width = this.originalImage.width;
-                            this.maskCanvas.height = this.originalImage.height;
+                            this.maskCanvas.width = width;
+                            this.maskCanvas.height = height;
                             
                             // 尝试从服务器加载遮罩
                             try {
@@ -362,39 +402,43 @@
                                     const maskUrl = URL.createObjectURL(maskBlob);
                                     const maskImage = new Image();
                                     maskImage.onload = () => {
-                                        this.maskCtx.drawImage(maskImage, 0, 0);
+                                        this.maskCtx.drawImage(maskImage, 0, 0, width, height);
                                         URL.revokeObjectURL(maskUrl);
-                                        this.isNewMask = false;  // 存在遮罩，标记为false
+                                        this.isNewMask = false;
                                         this.redrawCanvas();
                                     };
                                     maskImage.src = maskUrl;
                                 } else {
                                     // 如果遮罩不存在，创建新的黑色遮罩
                                     this.maskCtx.fillStyle = '#000';
-                                    this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
-                                    this.isNewMask = true;  // 不存在遮罩，标记为true
+                                    this.maskCtx.fillRect(0, 0, width, height);
+                                    this.isNewMask = true;
                                 }
                             } catch (error) {
                                 console.error('加载遮罩失败:', error);
-                                // 创建新的黑色遮罩
                                 this.maskCtx.fillStyle = '#000';
-                                this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
-                                this.isNewMask = true;  // 加载失败，标记为true
+                                this.maskCtx.fillRect(0, 0, width, height);
+                                this.isNewMask = true;
                             }
                             
                             // 计算适应屏幕的缩放比例
                             const container = this.canvas.parentElement;
                             const containerWidth = container.clientWidth;
                             const containerHeight = container.clientHeight;
-                            const scaleX = (containerWidth - 40) / this.canvas.width; // 留出一些边距
-                            const scaleY = (containerHeight - 40) / this.canvas.height;
-                            this.scale = Math.min(scaleX, scaleY, 1); // 不超过原始大小
+                            const scaleX = (containerWidth - 40) / width;
+                            const scaleY = (containerHeight - 40) / height;
+                            this.scale = Math.min(scaleX, scaleY, 1);
 
                             // 计算居中位置
-                            this.offsetX = (containerWidth - this.canvas.width * this.scale) / 2;
-                            this.offsetY = (containerHeight - this.canvas.height * this.scale) / 2;
+                            this.offsetX = (containerWidth - width * this.scale) / 2;
+                            this.offsetY = (containerHeight - height * this.scale) / 2;
 
                             this.redrawCanvas();
+                            
+                            // 如果图片被缩放了，显示提示信息
+                            if (this.originalImage.width !== this.canvas.width || this.originalImage.height !== this.canvas.height) {
+                                this.showToast(`图片已自动缩放至 ${width}x${height}`);
+                            }
                         };
                         this.originalImage.src = e.target.result;
                     };
