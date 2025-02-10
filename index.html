@@ -540,7 +540,7 @@
                 formData.append('md5', this.imageMD5);  // 添加MD5值
 
                 try {
-                    const response = await fetch('upload.php', {
+                    const response = await fetch('/upload', {
                         method: 'POST',
                         body: formData
                     });
@@ -573,7 +573,7 @@
                     formData.append('md5', this.imageMD5);  // 添加MD5值
                     this.showToast('开始遮罩上传 ... ');
                     try {
-                        const response = await fetch('upload.php', {
+                        const response = await fetch('/upload', {
                             method: 'POST',
                             body: formData
                         });

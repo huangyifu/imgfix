@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from email.parser import BytesParser
 from io import BytesIO
 import mimetypes
-import cv2
+from PIL import Image
 import numpy as np
 import torch
 import time
@@ -189,9 +189,6 @@ class UploadHandler(BaseHTTPRequestHandler):
             # 3. 调用lama模型进行推理
             try:
                 print("[DEBUG] 开始加载必要的库...")
-                import torch
-                import cv2
-                import numpy as np
                 
                 # 加载JIT模型
                 model_path = "big-lama/models/best.ckpt.pt"
@@ -211,25 +208,29 @@ class UploadHandler(BaseHTTPRequestHandler):
                 
                 # 读取和预处理图片
                 print("[DEBUG] 开始读取和预处理图片...")
-                image = cv2.imread(original_image)
-                print(f"[DEBUG] 原始图片shape: {image.shape if image is not None else 'None'}")
+                image = Image.open(original_image)
+                print(f"[DEBUG] 原始图片size: {image.size if image else 'None'}")
                 
                 # 确保图片尺寸是8的倍数
-                h, w = image.shape[:2]
+                w, h = image.size
                 new_h = (h // 8) * 8
                 new_w = (w // 8) * 8
                 if h != new_h or w != new_w:
                     print(f"[DEBUG] 调整图片尺寸为8的倍数: {w}x{h} -> {new_w}x{new_h}")
-                    image = cv2.resize(image, (new_w, new_h))
+                    image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
                 
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                mask = cv2.imread(mask_image, cv2.IMREAD_GRAYSCALE)
-                print(f"[DEBUG] Mask图片shape: {mask.shape if mask is not None else 'None'}")
+                # 转换为RGB并转为numpy数组
+                image = image.convert('RGB')
+                image = np.array(image)
+                
+                # 读取mask图片
+                mask = Image.open(mask_image).convert('L')
+                print(f"[DEBUG] Mask图片size: {mask.size if mask else 'None'}")
                 
                 # 调整mask尺寸以匹配图片
-                if mask.shape[:2] != image.shape[:2]:
-                    print(f"[DEBUG] 调整mask尺寸以匹配原图: {mask.shape[:2]} -> {image.shape[:2]}")
-                    mask = cv2.resize(mask, (image.shape[1], image.shape[0]))
+                if mask.size != (new_w, new_h):
+                    print(f"[DEBUG] 调整mask尺寸以匹配原图: {mask.size} -> {(new_w, new_h)}")
+                    mask = mask.resize((new_w, new_h), Image.Resampling.NEAREST)
                 
                 # 预处理图片
                 print("[DEBUG] 开始图片预处理...")
@@ -240,14 +241,14 @@ class UploadHandler(BaseHTTPRequestHandler):
                 
                 # 预处理mask - 确保mask是二值的，且黑色(0)表示要修复的区域
                 print("[DEBUG] 开始mask预处理...")
-                # 首先确保mask是二值的
-                _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
-                # 如果mask是白色表示要修复的区域，需要反转
-                if np.mean(mask[mask > 127]) < 127:  # 如果白色部分平均值小于127，说明黑色表示背景(需要反转)
-                    print("[DEBUG] 反转mask，确保黑色表示要修复区域")
-                    mask = 255 - mask
+                mask = np.array(mask)
+                mask = (mask > 127).astype(np.float32)
                 
-                mask = mask.astype('float32') / 255.0  # 归一化到0-1
+                # 如果mask是白色表示要修复的区域，需要反转
+                if np.mean(mask[mask > 0.5]) < 0.5:  # 如果白色部分平均值小于0.5，说明黑色表示背景(需要反转)
+                    print("[DEBUG] 反转mask，确保黑色表示要修复区域")
+                    mask = 1 - mask
+                
                 mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0).to(device)
                 print(f"[DEBUG] 处理后的mask tensor shape: {mask.shape}")
                 print(f"[DEBUG] mask值的范围: {mask.min().item():.3f} - {mask.max().item():.3f}")
@@ -264,12 +265,12 @@ class UploadHandler(BaseHTTPRequestHandler):
                 output = output.cpu().numpy()[0]
                 output = output.transpose(1, 2, 0)
                 output = (output * 255).clip(0, 255).astype('uint8')
-                output = cv2.cvtColor(output, cv2.COLOR_RGB2BGR)
                 
-                # 保存结果
+                # 转换为PIL图像并保存
+                output_image = Image.fromarray(output)
                 output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
                 print(f"[DEBUG] 保存结果到: {output_path}")
-                cv2.imwrite(output_path, output)
+                output_image.save(output_path, quality=95)
                 print("[DEBUG] 结果保存成功")
                 
                 return {
@@ -316,6 +317,10 @@ class UploadHandler(BaseHTTPRequestHandler):
         if parsed_path.path == '/lama':
             response = self.handle_lama_request()
             self.wfile.write(json.dumps(response).encode())
+            return
+
+        if parsed_path.path != '/upload':
+            self.send_error(404, 'File not found')
             return
 
         # 确保上传目录存在
@@ -399,22 +404,18 @@ class UploadHandler(BaseHTTPRequestHandler):
             # 如果是mask图片，需要进行二值化处理
             if is_mask:
                 print("[DEBUG] 处理mask图片...")
-                # 将二进制内容转换为numpy数组
-                nparr = np.frombuffer(file_item['content'], np.uint8)
-                img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
+                # 将二进制内容转换为PIL图像
+                img = Image.open(BytesIO(file_item['content'])).convert('L')
                 
                 # 进行二值化处理
-                _, img = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY)
+                img = img.point(lambda x: 0 if x < 127 else 255, '1')
                 
-                # 将处理后的图片编码为二进制
-                _, buffer = cv2.imencode(f'.{extension}', img)
-                content = buffer.tobytes()
+                # 保存处理后的图片
+                img.save(target_path, format=extension.upper())
             else:
-                content = file_item['content']
-                
-            # 保存文件
-            with open(target_path, 'wb') as f:
-                f.write(content)
+                # 直接保存原始文件
+                with open(target_path, 'wb') as f:
+                    f.write(file_item['content'])
             
             response = {
                 'status': 'success',
@@ -424,6 +425,9 @@ class UploadHandler(BaseHTTPRequestHandler):
                 'type': extension
             }
         except Exception as e:
+            print(f"[ERROR] 文件上传失败: {str(e)}")
+            import traceback
+            print(f"[ERROR] 详细错误信息: {traceback.format_exc()}")
             response = {
                 'status': 'error',
                 'message': f'文件上传失败: {str(e)}'
@@ -431,7 +435,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 
         self.wfile.write(json.dumps(response).encode())
 
-def run(server_class=HTTPServer, handler_class=UploadHandler, port=8000):
+def run(server_class=HTTPServer, handler_class=UploadHandler, port=8080):
     server_address = ('', port)
     httpd = server_class(server_address, handler_class)
     print(f'Starting server on port {port}...')
