@@ -103,7 +103,7 @@ class LamaWorker:
 			# 保存结果
 			output_image = Image.fromarray(output)
 			output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
-			output_image.save(output_path, quality=80)
+			output_image.save(output_path, quality=85)
 			# 保存缩略图
 			thumb = output_image.copy()
 			thumb.thumbnail((80, 80))
