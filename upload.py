@@ -2,7 +2,7 @@ import os
 import json
 import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from email.parser import BytesParser
 from io import BytesIO
 import mimetypes
@@ -10,6 +10,8 @@ from PIL import Image
 import numpy as np
 import torch
 import time
+from task_queue import task_queue
+from lama_worker import worker
 
 class UploadHandler(BaseHTTPRequestHandler):
 	def get_content_type(self, path):
@@ -24,6 +26,24 @@ class UploadHandler(BaseHTTPRequestHandler):
 		# 解析请求的路径
 		parsed_path = urlparse(self.path)
 		request_path = parsed_path.path
+		
+		# 处理任务状态查询
+		if request_path == '/tasks':
+			self.send_response(200)
+			self.send_header('Content-Type', 'application/json')
+			self.send_header('Access-Control-Allow-Origin', '*')
+			self.end_headers()
+			
+			# 获取查询参数
+			query_params = parse_qs(parsed_path.query)
+			md5 = query_params.get('md5', [None])[0]
+			page = int(query_params.get('page', ['1'])[0])
+			per_page = int(query_params.get('per_page', ['5'])[0])
+			
+			# 获取任务状态
+			status = task_queue.get_task_status(md5, page, per_page)
+			self.wfile.write(json.dumps(status).encode())
+			return
 		
 		# 如果请求根路径，默认返回index.html
 		if request_path == '/':
@@ -62,7 +82,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 	def do_OPTIONS(self):
 		self.send_response(200)
 		self.send_header('Access-Control-Allow-Origin', '*')
-		self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+		self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS, GET')
 		self.send_header('Access-Control-Allow-Headers', 'Content-Type')
 		self.end_headers()
 
@@ -153,7 +173,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 					break
 			
 			# 2. 查找mask图片
-			for ext in ['png','jpg', 'gif']:
+			for ext in ['png', 'jpg', 'gif']:
 				mask_path = os.path.join(image_dir, f"{md5}_mask.{ext}")
 				print(f"[DEBUG] 尝试查找mask图片: {mask_path}")
 				if os.path.exists(mask_path):
@@ -167,125 +187,36 @@ class UploadHandler(BaseHTTPRequestHandler):
 					'status': 'error',
 					'message': '找不到原始图片或mask图片'
 				}
-
-			# 检查lama处理后的图片是否存在，且时间戳符合要求
-			lama_output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
-			if os.path.exists(lama_output_path):
-				print(f"[DEBUG] 找到已存在的lama处理结果: {lama_output_path}")
-				lama_time = os.path.getmtime(lama_output_path)
-				mask_time = os.path.getmtime(mask_image)
-				current_time = time.time()
-				
-				if lama_time > mask_time and lama_time <= current_time:
-					print(f"[DEBUG] 使用已存在的lama处理结果（lama时间: {time.ctime(lama_time)}, mask时间: {time.ctime(mask_time)}）")
-					return {
-						'status': 'success',
-						'message': '使用已存在的图片修复结果',
-						'output_path': lama_output_path
-					}
-				else:
-					print(f"[DEBUG] 已存在的lama结果不满足时间条件，将重新处理")
 			
-			# 3. 调用lama模型进行推理
-			try:
-				print("[DEBUG] 开始加载必要的库...")
+			# # 检查lama处理后的图片是否存在，且时间戳符合要求
+			# lama_output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
+			# if os.path.exists(lama_output_path):
+			# 	print(f"[DEBUG] 找到已存在的lama处理结果: {lama_output_path}")
+			# 	lama_time = os.path.getmtime(lama_output_path)
+			# 	mask_time = os.path.getmtime(mask_image)
+			# 	current_time = time.time()
 				
-				# 加载JIT模型
-				model_path = "big-lama/models/best.ckpt.pt"
-				print(f"[DEBUG] 尝试加载模型: {model_path}")
-				if not os.path.exists(model_path):
-					print("[ERROR] 模型文件不存在")
-					return {
-						'status': 'error',
-						'message': '找不到模型文件'
-					}
-				
-				device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-				print(f"[DEBUG] 使用设备: {device}")
-				model = torch.jit.load(model_path, map_location=device)
-				model.eval()
-				print("[DEBUG] 模型加载成功")
-				
-				# 读取和预处理图片
-				print("[DEBUG] 开始读取和预处理图片...")
-				image = Image.open(original_image)
-				print(f"[DEBUG] 原始图片size: {image.size if image else 'None'}")
-				
-				# 确保图片尺寸是8的倍数
-				w, h = image.size
-				new_h = (h // 8) * 8
-				new_w = (w // 8) * 8
-				if h != new_h or w != new_w:
-					print(f"[DEBUG] 调整图片尺寸为8的倍数: {w}x{h} -> {new_w}x{new_h}")
-					image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-				
-				# 转换为RGB并转为numpy数组
-				image = image.convert('RGB')
-				image = np.array(image)
-				
-				# 读取mask图片
-				mask = Image.open(mask_image).convert('L')
-				print(f"[DEBUG] Mask图片size: {mask.size if mask else 'None'}")
-				
-				# 调整mask尺寸以匹配图片
-				if mask.size != (new_w, new_h):
-					print(f"[DEBUG] 调整mask尺寸以匹配原图: {mask.size} -> {(new_w, new_h)}")
-					mask = mask.resize((new_w, new_h), Image.Resampling.NEAREST)
-				
-				# 预处理图片
-				print("[DEBUG] 开始图片预处理...")
-				image = image.astype('float32') / 255.0
-				image = image.transpose(2, 0, 1)
-				image = torch.from_numpy(image).unsqueeze(0).to(device)
-				print(f"[DEBUG] 处理后的图片tensor shape: {image.shape}")
-				
-				# 预处理mask - 确保mask是二值的，且黑色(0)表示要修复的区域
-				print("[DEBUG] 开始mask预处理...")
-				mask = np.array(mask)
-				mask = (mask > 127).astype(np.float32)
-				
-				# 如果mask是白色表示要修复的区域，需要反转
-				if np.mean(mask[mask > 0.5]) < 0.5:  # 如果白色部分平均值小于0.5，说明黑色表示背景(需要反转)
-					print("[DEBUG] 反转mask，确保黑色表示要修复区域")
-					mask = 1 - mask
-				
-				mask = torch.from_numpy(mask).unsqueeze(0).unsqueeze(0).to(device)
-				print(f"[DEBUG] 处理后的mask tensor shape: {mask.shape}")
-				print(f"[DEBUG] mask值的范围: {mask.min().item():.3f} - {mask.max().item():.3f}")
-				print(f"[DEBUG] mask平均值: {mask.mean().item():.3f} (越接近0表示要修复的区域越大)")
-				
-				# 进行推理
-				print("[DEBUG] 开始模型推理...")
-				with torch.no_grad():
-					output = model(image, mask)
-				print("[DEBUG] 模型推理完成")
-				
-				# 后处理输出
-				print("[DEBUG] 开始后处理输出...")
-				output = output.cpu().numpy()[0]
-				output = output.transpose(1, 2, 0)
-				output = (output * 255).clip(0, 255).astype('uint8')
-				
-				# 转换为PIL图像并保存
-				output_image = Image.fromarray(output)
-				output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
-				print(f"[DEBUG] 保存结果到: {output_path}")
-				output_image.save(output_path, quality=90)
-				print("[DEBUG] 结果保存成功")
-				
+			# 	if lama_time > mask_time and lama_time <= current_time:
+			# 		print(f"[DEBUG] 使用已存在的lama处理结果（lama时间: {time.ctime(lama_time)}, mask时间: {time.ctime(mask_time)}）")
+			# 		return {
+			# 			'status': 'success',
+			# 			'message': '使用已存在的图片修复结果',
+			# 			'output_path': lama_output_path
+			# 		}
+			# 	else:
+			# 		print(f"[DEBUG] 已存在的lama结果不满足时间条件，将重新处理")
+			
+			# 添加到任务队列
+			if task_queue.add_task(md5):
 				return {
 					'status': 'success',
-					'message': '图片修复完成',
-					'output_path': output_path
+					'message': '任务已添加到队列',
+					'task_id': md5
 				}
-				
-			except Exception as e:
-				print(f"[ERROR] 模型推理失败: {str(e)}")
-				import traceback
-				print(f"[ERROR] 详细错误信息: {traceback.format_exc()}")
+			else:
 				return {
 					'status': 'error',
-					'message': f'模型推理失败: {str(e)}'
+					'message': '任务已存在'
 				}
 			
 		except json.JSONDecodeError:
@@ -410,6 +341,15 @@ class UploadHandler(BaseHTTPRequestHandler):
 				# 进行二值化处理
 				img = img.point(lambda x: 0 if x < 127 else 255, '1')
 				
+				# 删除旧的lama结果图片（如果存在）
+				lama_result_path = os.path.join(upload_dir, f"{md5}_lama.jpg")
+				if os.path.exists(lama_result_path):
+					try:
+						os.remove(lama_result_path)
+						print(f"[DEBUG] 已删除旧的lama结果: {lama_result_path}")
+					except Exception as e:
+						print(f"[WARNING] 删除旧的lama结果失败: {str(e)}")
+				
 				# 保存处理后的图片
 				img.save(target_path, format=extension.upper())
 			else:
@@ -439,7 +379,12 @@ def run(server_class=HTTPServer, handler_class=UploadHandler, port=8080):
 	server_address = ('', port)
 	httpd = server_class(server_address, handler_class)
 	print(f'Starting server on http://localhost:{port} ...')
-	httpd.serve_forever()
+	try:
+		httpd.serve_forever()
+	except KeyboardInterrupt:
+		print("Shutting down server...")
+	finally:
+		httpd.server_close()
 
 if __name__ == '__main__':
 	run() 
