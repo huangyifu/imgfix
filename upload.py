@@ -2,7 +2,7 @@ import os
 import json
 import hashlib
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 from email.parser import BytesParser
 from io import BytesIO
 import mimetypes

@@ -4,7 +4,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-	<title>图片精修工具</title>
+	<title>PureStory图片擦除工具</title>
 	<script src="spark-md5.min.js"></script>
 	<style>
 		* {
@@ -215,6 +215,10 @@
 				<button id="resetZoom">重置</button>
 			</div>
 		</div>
+        <!-- 修复完成的图片显示此处,显示大小:80x80  -->
+		<div>
+			<img id="previewImage" style="height: 80px; display: none;">
+		</div>
 		<div class="canvas-container">
 			<canvas id="imageCanvas"></canvas>
 		</div>
@@ -300,11 +304,6 @@
 					saveBtn.addEventListener('click', () => this.saveMask());
 				}
 
-				// 添加触摸事件处理
-				this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
-				this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
-				this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e));
-
 				// 方向控制
 				document.getElementById('moveLeft').addEventListener('click', () => this.move('left'));
 				document.getElementById('moveRight').addEventListener('click', () => this.move('right'));
@@ -327,6 +326,11 @@
 
 				// 添加清除按钮事件
 				document.getElementById('clearBtn').addEventListener('click', () => this.clearMask());
+
+				// 添加触摸事件处理
+				// this.canvas.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+				// this.canvas.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+				// this.canvas.addEventListener('touchend', (e) => this.handleTouchEnd(e));
 			}
 
 			// 计算文件的MD5值
@@ -438,9 +442,9 @@
 							const scaleY = (containerHeight - 40) / height;
 							this.scale = Math.min(scaleX, scaleY, 1);
 
-							// 计算居中位置
+							// 计算居中位置, 修改此处
 							this.offsetX = (containerWidth - width * this.scale) / 2;
-							this.offsetY = (containerHeight - height * this.scale) / 2;
+							this.offsetY = 0; // 将 offsetY 设置为 0
 
 							this.redrawCanvas();
 
@@ -569,14 +573,20 @@
 			}
 
 			// 显示Toast提示
-			showToast(message) {
+			showToast(message, duration = 5000) {
 				this.toast.textContent = message;
 				this.toast.style.display = 'block';
 
 				// 3秒后自动隐藏
-				setTimeout(() => {
+				// 清除之前的定时器
+				if (this.toastTimeout) {
+					clearTimeout(this.toastTimeout);
+				}
+
+				this.toastTimeout = setTimeout(() => {
 					this.toast.style.display = 'none';
-				}, 3000);
+					this.toastTimeout = null; // 清除引用
+				}, duration);
 			}
 
 			// 修改uploadImage方法
@@ -668,7 +678,7 @@
 					await this.uploadMask();
 				}
 
-				this.showToast('开始Lama图像修复...');
+				this.showToast('开始Lama图像修复...',120000);
 				try {
 					const response = await fetch('/lama', {
 						method: 'POST',
@@ -683,37 +693,10 @@
 					const result = await response.json();
 
 					if (result.status === 'success') {
-						// 创建新的Image对象来显示修复后的图片
-						const lamaImage = new Image();
-						lamaImage.onload = () => {
-							// 保存当前的遮罩
-							const tempCanvas = document.createElement('canvas');
-							tempCanvas.width = this.maskCanvas.width;
-							tempCanvas.height = this.maskCanvas.height;
-							const tempCtx = tempCanvas.getContext('2d');
-							tempCtx.drawImage(this.maskCanvas, 0, 0);
-
-							// 下载遮罩文件
-							const link = document.createElement('a');
-							link.download = `${this.imageMD5}_lama.jpg`;
-							link.href = result.output_path;
-							link.click();
-
-							// 保存到手机相册
-							// this.originalImage = lamaImage;
-							// this.canvas.width = lamaImage.width;
-							// this.canvas.height = lamaImage.height;
-							// this.maskCanvas.width = lamaImage.width;
-							// this.maskCanvas.height = lamaImage.height;
-
-							// // 恢复遮罩
-							// this.maskCtx.drawImage(tempCanvas, 0, 0);
-
-							// // 重绘画布
-							// this.redrawCanvas();
-							this.showToast('图像修复完成');
-						};
-						lamaImage.src = `image/${this.imageMD5}_lama.jpg?t=${new Date().getTime()}`; // 添加时间戳防止缓存
+                        const previewImage = document.getElementById('previewImage');
+                        previewImage.src = `image/${this.imageMD5}_lama.jpg?t=${new Date().getTime()}`;
+                        previewImage.style.display = 'block'; // 显示预览图
+                        this.showToast('修复完成');
 					} else {
 						this.showToast('修复失败: ' + result.message);
 					}
@@ -721,76 +704,6 @@
 					this.showToast('修复出错: ' + error.message);
 				}
 			}
-
-			handleTouchStart(e) {
-				this.touchStartTime = Date.now();
-				if (e.touches.length === 2) {
-					// 双指操作 - 准备缩放
-					this.lastTouchDistance = this.getTouchDistance(e.touches);
-				} else if (e.touches.length === 1) {
-					// 单指操作 - 准备绘制或平移
-					const touch = e.touches[0];
-					const pos = this.getMousePos(touch);
-					this.lastX = pos.x;
-					this.lastY = pos.y;
-					// 开始绘制前保存状态
-					this.saveToHistory();
-					// 立即绘制一个点
-					this.drawPoint(pos.x, pos.y);
-				}
-				e.preventDefault();
-			}
-
-			handleTouchMove(e) {
-				if (e.touches.length === 2) {
-					// 双指缩放
-					const distance = this.getTouchDistance(e.touches);
-					const scale = distance / this.lastTouchDistance;
-					this.zoom(scale);
-					this.lastTouchDistance = distance;
-				} else if (e.touches.length === 1) {
-					const touch = e.touches[0];
-					const pos = this.getMousePos(touch);
-					const timeDiff = Date.now() - this.touchStartTime;
-
-					if (timeDiff > 200) {  // 增加到200ms，减少误触
-						// 平移画布
-						const dx = pos.x - this.lastX;
-						const dy = pos.y - this.lastY;
-						this.offsetX += dx * this.scale;
-						this.offsetY += dy * this.scale;
-						this.redrawCanvas();
-					} else {
-						// 绘制并连接线条
-						this.maskCtx.beginPath();
-						this.maskCtx.strokeStyle = '#fff';
-						this.maskCtx.lineWidth = (this.brushSize * 2) / this.scale;
-						this.maskCtx.lineCap = 'round';
-						this.maskCtx.moveTo(this.lastX, this.lastY);
-						this.maskCtx.lineTo(pos.x, pos.y);
-						this.maskCtx.stroke();
-						this.drawPoint(pos.x, pos.y);
-					}
-					this.lastX = pos.x;
-					this.lastY = pos.y;
-				}
-				e.preventDefault();
-			}
-
-			handleTouchEnd(e) {
-				if (e.touches.length === 0) {
-					this.isDrawing = false;
-					this.isPanning = false;
-				}
-				e.preventDefault();
-			}
-
-			getTouchDistance(touches) {
-				const dx = touches[0].clientX - touches[1].clientX;
-				const dy = touches[0].clientY - touches[1].clientY;
-				return Math.sqrt(dx * dx + dy * dy);
-			}
-
 			move(direction) {
 				if (!this.originalImage) return;
 
