@@ -7,6 +7,9 @@ img.flmja.com:8000  {
     handle /lama {
         reverse_proxy localhost:8080
     }
+    handle /tasks {
+        reverse_proxy localhost:8080
+    }
 
     # 默认文档处理
     handle {

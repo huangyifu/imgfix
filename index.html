@@ -468,10 +468,6 @@
 				<!-- 分页控件将在这里动态生成 -->
 			</div>
 		</div>
-		
-		<div>
-			<img id="previewImage" style="height: 80px; display: none;">
-		</div>
 		<div class="canvas-container">
 			<canvas id="imageCanvas"></canvas>
 		</div>
@@ -931,9 +927,6 @@
 					const result = await response.json();
 
 					if (result.status === 'success') {
-                        const previewImage = document.getElementById('previewImage');
-                        previewImage.src = `image/${this.imageMD5}_lama.jpg?t=${new Date().getTime()}`;
-                        previewImage.style.display = 'block'; // 显示预览图
                         this.showToast('OK: ' + result.message);
 					    await refreshTaskList(); // 修改为 await 调用
 					} else {
@@ -1059,7 +1052,7 @@
 				}[task.status];
 				
 				const resultImage = task.status === 'completed' ? 
-					`<img src="/image/${md5}_lama.jpg?t=${Date.now()}" class="task-result" onclick="window.open(this.src)">` : '';
+					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="window.open('/image/${md5}_lama.jpg?t=${Date.now()}')">` : '';
 				
 				const timeStr = new Date(task.create_time * 1000).toLocaleString();
 				

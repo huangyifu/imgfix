@@ -103,7 +103,11 @@ class LamaWorker:
 			# 保存结果
 			output_image = Image.fromarray(output)
 			output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
-			output_image.save(output_path, quality=90)
+			output_image.save(output_path, quality=80)
+			# 保存缩略图
+			thumb = output_image.copy()
+			thumb.thumbnail((80, 80))
+			thumb.save(os.path.join(image_dir, f"{md5}_lama_thumb.jpg"), "JPEG", quality=60)
 			
 			task_queue.update_task_status(md5, 'completed', '处理完成', 100)
 			
