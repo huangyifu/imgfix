@@ -438,7 +438,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 def run(server_class=HTTPServer, handler_class=UploadHandler, port=8080):
     server_address = ('', port)
     httpd = server_class(server_address, handler_class)
-    print(f'Starting server on port {port}...')
+    print(f'Starting server on http://localhost:{port} ...')
     httpd.serve_forever()
 
 if __name__ == '__main__':
