@@ -588,14 +588,14 @@
 				</div>
 				<label>画笔: <span id="brushSize">10</span>px</label>
 				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
-				<button id="undoBtn">撤销编辑</button>
-				<button id="clearBtn">清空蒙版</button>
 			</div>
 			<div class="all-controls">
 				<button id="zoomIn">放大</button>
 				<button id="zoomOut">缩小</button>
 				<button id="resetZoom">原始大小</button>
 				<button id="fitScreen">显示全图</button>
+				<button id="undoBtn">撤销编辑</button>
+				<button id="clearBtn">清空蒙版</button>
 			</div>
 		</div>
 		
@@ -632,10 +632,19 @@
 		class ImageMaskEditor {
 			constructor() {
 				this.canvas = document.getElementById('imageCanvas');
-				this.ctx = this.canvas.getContext('2d');
+				// 添加兼容性检查
+				try {
+					this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+				} catch (e) {
+					this.ctx = this.canvas.getContext('2d');
+				}
 				// 创建遮罩画布
 				this.maskCanvas = document.createElement('canvas');
-				this.maskCtx = this.maskCanvas.getContext('2d');
+				try {
+					this.maskCtx = this.maskCanvas.getContext('2d', { willReadFrequently: true });
+				} catch (e) {
+					this.maskCtx = this.maskCanvas.getContext('2d');
+				}
 				this.isDrawing = false;
 				this.isPanning = false;  // 是否正在平移
 				this.lastTouchDistance = 0;  // 用于双指缩放
@@ -795,7 +804,7 @@
 
 								// 显示分辨率信息
 								if (fileInfo) {
-									fileInfo.textContent = `${this.originalImage.width} × ${this.originalImage.height} → ${width} × ${height}`;
+									fileInfo.textContent = `${this.originalImage.width} × ${this.originalImage.height} ⇨ ${width} × ${height}`;
 									showToast(`图片尺寸过大，将自动缩放至 ${width} × ${height}`);
 								}
 
