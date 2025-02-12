@@ -7,6 +7,11 @@ img.flmja.com:8000  {
     handle /lama {
         reverse_proxy localhost:8080
     }
+
+    handle /relama {
+        reverse_proxy localhost:8080
+    }
+
     handle /tasks {
         reverse_proxy localhost:8080
     }

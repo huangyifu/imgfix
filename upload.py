@@ -116,6 +116,95 @@ class UploadHandler(BaseHTTPRequestHandler):
 				'message': f'删除任务失败: {str(e)}'
 			}
 
+	def handle_relama_request(self):
+		"""处理再次Lama的请求"""
+		try:
+			content_length = int(self.headers.get('Content-Length', 0))
+			post_data = self.rfile.read(content_length)
+			data = json.loads(post_data)
+			
+			if 'md5' not in data:
+				return {
+					'status': 'error',
+					'message': '缺少 md5 参数'
+				}
+			
+			md5 = data['md5']
+			image_dir = 'image/'
+			
+			# 检查lama处理后的图片是否存在
+			lama_image = os.path.join(image_dir, f"{md5}_lama.jpg")
+			if not os.path.exists(lama_image):
+				return {
+					'status': 'error',
+					'message': '找不到已处理的图片'
+				}
+			
+			# 查找原始mask图片
+			mask_image = None
+			for ext in ['png', 'jpg', 'gif']:
+				mask_path = os.path.join(image_dir, f"{md5}_mask.{ext}")
+				if os.path.exists(mask_path):
+					mask_image = mask_path
+					mask_ext = ext
+					break
+			
+			if not mask_image:
+				return {
+					'status': 'error',
+					'message': '找不到原始mask图片'
+				}
+			
+			# 生成新的MD5值
+			with open(lama_image, 'rb') as f:
+				file_content = f.read()
+				new_md5 = hashlib.md5(file_content).hexdigest()
+			
+			# 复制lama处理后的图片作为新的原始图片
+			new_image = os.path.join(image_dir, f"{new_md5}.jpg")
+			import shutil
+			shutil.copy2(lama_image, new_image)
+			
+			# 复制原始mask图片
+			new_mask = os.path.join(image_dir, f"{new_md5}_mask.{mask_ext}")
+			shutil.copy2(mask_image, new_mask)
+			
+			# 生成缩略图
+			try:
+				img = Image.open(new_image)
+				img.thumbnail((100, 100))
+				thumb_path = os.path.join(image_dir, f"{new_md5}_thumb.jpg")
+				img.save(thumb_path, "JPEG")
+			except Exception as e:
+				print(f"[WARNING] 生成缩略图失败: {str(e)}")
+			
+			# 添加到任务队列
+			if task_queue.add_task(new_md5):
+				return {
+					'status': 'success',
+					'message': '已添加新的Lama任务',
+					'new_md5': new_md5
+				}
+			else:
+				return {
+					'status': 'error',
+					'message': '任务已存在'
+				}
+			
+		except json.JSONDecodeError:
+			return {
+				'status': 'error',
+				'message': 'JSON解析失败'
+			}
+		except Exception as e:
+			print(f"[ERROR] 再次Lama失败: {str(e)}")
+			import traceback
+			print(f"[ERROR] 详细错误信息: {traceback.format_exc()}")
+			return {
+				'status': 'error',
+				'message': f'再次Lama失败: {str(e)}'
+			}
+
 	def parse_multipart(self):
 		content_type = self.headers.get('Content-Type')
 		if not content_type:
@@ -277,6 +366,12 @@ class UploadHandler(BaseHTTPRequestHandler):
 		# 处理删除任务请求
 		if parsed_path.path == '/delete_task':
 			response = self.handle_delete_task()
+			self.wfile.write(json.dumps(response).encode())
+			return
+		
+		# 处理再次Lama请求
+		if parsed_path.path == '/relama':
+			response = self.handle_relama_request()
 			self.wfile.write(json.dumps(response).encode())
 			return
 		

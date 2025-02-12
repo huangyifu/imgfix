@@ -4,7 +4,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-	<title>PureStory图片擦除工具</title>
+	<title>Pure Story 图片擦除工具</title>
 	<script src="spark-md5.min.js"></script>
 	<style>
 		* {
@@ -480,19 +480,40 @@
 		.lama-btn:hover {
 			background-color: #1976D2 !important;
 		}
+
+		/* 添加再次Lama按钮样式 */
+		.relama-btn {
+			background: #2196F3;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			padding: 2px 8px;
+			font-size: 12px;
+			cursor: pointer;
+			margin-left: 10px;
+			transition: background-color 0.3s;
+		}
+
+		.relama-btn:hover {
+			background: #1976D2;
+		}
+
+		.relama-btn:disabled {
+			background: #ccc;
+			cursor: not-allowed;
+		}
 	</style>
 </head>
 
 <body>
 	<div class="container">
 		<div class="controls">
-			<input type="file" id="imageInput" accept="image/*">
+			<input type="file" id="imageInput" accept="image/*"><button id="uploadImageLamaBtn" class="lama-btn">Lama擦除</button>
 			<div class="brush-controls">
 				<label>画笔大小: <span id="brushSize">10</span>px</label>
 				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
 				<button id="undoBtn">撤销</button>
 				<button id="clearBtn">清空</button>
-				<button id="uploadImageLamaBtn" class="lama-btn">Lama擦除</button>
 			</div>
 			<div class="all-controls">
                 <button id="moveUp">↑ 上移</button> <button id="moveDown">↓ 下移</button>
@@ -1097,6 +1118,7 @@
 								<span class="task-status ${task.status}">${statusText}</span>
 								<span class="task-time">${timeStr}</span>
 								<button class="delete-btn" onclick="deleteTask('${md5}')">删除</button>
+								${task.status === 'completed' ? `<button class="relama-btn" onclick="reLama('${md5}')">再擦一次</button>` : ''}
 							</div>
 						</div>
 						<div class="task-images">
@@ -1256,6 +1278,31 @@
 			} catch (error) {
 				console.error('删除任务失败:', error);
 				showToast('删除任务失败: ' + error.message);
+			}
+		}
+
+		// 添加再次Lama的函数
+		async function reLama(md5) {
+			try {
+				// 先复制处理后的图片作为新的原始图片
+				const response = await fetch('/relama', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ md5 })
+				});
+				
+				const result = await response.json();
+				if (result.status === 'success') {
+					showToast('OK: ' + result.message);
+					await refreshTaskList();
+				} else {
+					showToast('再次Lama失败: ' + result.message);
+				}
+			} catch (error) {
+				console.error('再次Lama失败:', error);
+				showToast('再次Lama失败: ' + error.message);
 			}
 		}
 	</script>
