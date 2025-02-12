@@ -324,10 +324,25 @@
 			object-fit: cover;
 			border-radius: 4px;
 			cursor: pointer;
+			transition: transform 0.3s ease;
 		}
 		
 		.task-result:hover {
 			transform: scale(1.1);
+		}
+
+		/* 添加任务图片容器样式 */
+		.task-images {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			margin-top: 8px;
+		}
+
+		.task-images .arrow {
+			color: #4CAF50;
+			font-size: 20px;
+			font-weight: bold;
 		}
 		
 		@media (max-width: 768px) {
@@ -543,11 +558,6 @@
 				// 新增：标记原图是否已上传
 				this.isImageUploaded = false;
 
-				// 创建Toast提示元素
-				this.toast = document.createElement('div');
-				this.toast.className = 'toast';
-				document.body.appendChild(this.toast);
-
 				this.setupEventListeners();
 			}
 
@@ -722,7 +732,7 @@
 
 							// 如果图片被缩放了，显示提示信息
 							if (this.originalImage.width !== this.canvas.width || this.originalImage.height !== this.canvas.height) {
-								this.showToast(`图片已自动缩放至 ${width}x${height}`);
+								showToast(`图片已自动缩放至 ${width}x${height}`);
 							}
 							// 重置图片上传状态
 							this.isImageUploaded = false;
@@ -731,7 +741,7 @@
 					};
 					reader.readAsDataURL(file);
 				} catch (error) {
-					this.showToast('加载图片出错: ' + error.message);
+					showToast('加载图片出错: ' + error.message);
 				}
 			}
 
@@ -833,7 +843,7 @@
 
 			async saveMask() {
 				if (!this.imageMD5) {
-					this.showToast('请先选择图片');
+					showToast('请先选择图片');
 					return;
 				}
 
@@ -844,31 +854,14 @@
 				link.click();
 			}
 
-			// 显示Toast提示
-			showToast(message, duration = 5000) {
-				this.toast.textContent = message;
-				this.toast.style.display = 'block';
-
-				// 3秒后自动隐藏
-				// 清除之前的定时器
-				if (this.toastTimeout) {
-					clearTimeout(this.toastTimeout);
-				}
-
-				this.toastTimeout = setTimeout(() => {
-					this.toast.style.display = 'none';
-					this.toastTimeout = null; // 清除引用
-				}, duration);
-			}
-
 			// 修改uploadImage方法
 			async uploadImage() {
 				if (!this.originalImage) {
-					this.showToast('请先选择一张图片');
+					showToast('请先选择一张图片');
 					return;
 				}
 				this.isImageUploaded = false; // 标记图片已上传
-				this.showToast('开始原图图片上传 ... ');
+				showToast('开始原图图片上传 ... ');
 				// 将原始图片转换为 Blob
 				const response = await fetch(this.originalImage.src);
 				const blob = await response.blob();
@@ -884,20 +877,20 @@
 					});
 					const result = await response.json();
 					if (result.status === 'success') {
-						this.showToast('原图上传成功');
+						showToast('原图上传成功');
 						this.isImageUploaded = true; // 标记图片已上传
 					} else {
-						this.showToast('原图上传失败: ' + result.message);
+						showToast('原图上传失败: ' + result.message);
 					}
 				} catch (error) {
-					this.showToast('原图上传出错: ' + error.message);
+					showToast('原图上传出错: ' + error.message);
 				}
 			}
 
 			// 修改uploadMask方法
 			async uploadMask() {
 				if (!this.maskCanvas || !this.imageMD5) {
-					this.showToast('请先选择图片并创建遮罩');
+					showToast('请先选择图片并创建遮罩');
 					return;
 				}
 
@@ -908,7 +901,7 @@
 						formData.append('file', blob, 'mask.png');
 						formData.append('md5', this.imageMD5);
 
-						this.showToast('开始遮罩图片上传 ... ');
+						showToast('开始遮罩图片上传 ... ');
 
 						try {
 							const response = await fetch('/upload', {
@@ -917,15 +910,15 @@
 							});
 							const result = await response.json();
 							if (result.status === 'success') {
-								this.showToast('遮罩图片上传成功');
+								showToast('遮罩图片上传成功');
 								this.isMaskModified = false;
 								resolve(result); // 成功时resolve
 							} else {
-								this.showToast('遮罩图片上传失败: ' + result.message);
+								showToast('遮罩图片上传失败: ' + result.message);
 								reject(new Error(result.message)); // 失败时reject
 							}
 						} catch (error) {
-							this.showToast('遮罩图片上传出错: ' + error.message);
+							showToast('遮罩图片上传出错: ' + error.message);
 							reject(error); // 出错时reject
 						}
 					}, 'image/png');
@@ -935,23 +928,23 @@
 			// 修改 uploadLama 方法
 			async uploadLama() {
 				if (!this.maskCanvas || !this.imageMD5) {
-					this.showToast('请先选择图片并创建遮罩');
+					showToast('请先选择图片并创建遮罩');
 					return;
 				}
 
 				// 如果原始图片未上传，则先上传
 				if (!this.isImageUploaded) {
-                    this.showToast('原图还未上传，正在上传...');
+                    showToast('原图还未上传，正在上传...');
 					await this.uploadImage();
 				}
 
 				// 如果遮罩被修改，先上传遮罩
 				if (this.isMaskModified) {
-					this.showToast('遮罩已修改，正在上传...');
+					showToast('遮罩已修改，正在上传...');
 					await this.uploadMask();
 				}
 
-				this.showToast('开始Lama图像修复...',120000);
+				showToast('开始Lama图像修复...',120000);
 				try {
 					const response = await fetch('/lama', {
 						method: 'POST',
@@ -966,13 +959,13 @@
 					const result = await response.json();
 
 					if (result.status === 'success') {
-                        this.showToast('OK: ' + result.message);
+                        showToast('OK: ' + result.message);
 					    await refreshTaskList(); // 修改为 await 调用
 					} else {
-						this.showToast('修复失败: ' + result.message);
+						showToast('修复失败: ' + result.message);
 					}
 				} catch (error) {
-					this.showToast('修复出错: ' + error.message);
+					showToast('修复出错: ' + error.message);
 				}
 			}
 			move(direction) {
@@ -1090,8 +1083,10 @@
 					'error': '失败'
 				}[task.status];
 				
+				// 添加原始图片和处理后的图片显示
+				const originalImage = `<img src="/image/${md5}_thumb.jpg?t=${Date.now()}" class="task-result" onclick="window.open('/image/${md5}.jpg?t=${Date.now()}')" title="原始图片">`;
 				const resultImage = task.status === 'completed' ? 
-					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="window.open('/image/${md5}_lama.jpg?t=${Date.now()}')">` : '';
+					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="window.open('/image/${md5}_lama.jpg?t=${Date.now()}')" title="处理后图片">` : '';
 				
 				const timeStr = new Date(task.create_time * 1000).toLocaleString();
 				
@@ -1104,7 +1099,11 @@
 								<button class="delete-btn" onclick="deleteTask('${md5}')">删除</button>
 							</div>
 						</div>
-						${resultImage}
+						<div class="task-images">
+							${originalImage}
+							${task.status === 'completed' ? '<span class="arrow">→</span>' : ''}
+							${resultImage}
+						</div>
 					</div>
 				`;
 			}).join('');

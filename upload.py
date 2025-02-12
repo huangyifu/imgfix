@@ -386,19 +386,68 @@ class UploadHandler(BaseHTTPRequestHandler):
 					except Exception as e:
 						print(f"[WARNING] 删除旧的lama结果失败: {str(e)}")
 				
-				# 保存处理后的图片
+				# 保存处理后的图片，mask图片保持原格式
 				img.save(target_path, format=extension.upper())
 			else:
-				# 直接保存原始文件
-				with open(target_path, 'wb') as f:
-					f.write(file_item['content'])
+				# 将原始图片转换为JPG格式
+				print("[DEBUG] 转换并保存原始图片...")
+				img = Image.open(BytesIO(file_item['content']))
+				if img.mode in ('RGBA', 'LA'):
+					# 如果图片有透明通道，将其转换为RGB
+					background = Image.new('RGB', img.size, (255, 255, 255))
+					if img.mode == 'RGBA':
+						background.paste(img, mask=img.split()[3])
+					else:
+						background.paste(img, mask=img.split()[1])
+					img = background
+				elif img.mode != 'RGB':
+					img = img.convert('RGB')
+					
+				# 修改目标路径为jpg扩展名
+				target_path = os.path.join(upload_dir, f"{md5}.jpg")
+				
+				# 保存图片并检查文件大小
+				quality = 95
+				temp_buffer = BytesIO()
+				try:
+					while True:
+						# 重置缓冲区位置
+						temp_buffer.seek(0)
+						temp_buffer.truncate()
+						
+						# 保存到临时缓冲区以检查大小
+						img.save(temp_buffer, format='JPEG', quality=quality)
+						file_size = temp_buffer.tell()
+						
+						# 如果文件小于500KB或质量已经很低，则保存文件
+						if file_size <= 500 * 1024 or quality <= 30:
+							img.save(target_path, format='JPEG', quality=quality)
+							print(f"[DEBUG] 图片已保存，质量：{quality}，大小：{file_size/1024:.1f}KB")
+							break
+						
+						# 否则降低质量继续尝试
+						quality -= 5
+						print(f"[DEBUG] 文件过大 ({file_size/1024:.1f}KB)，降低质量到：{quality}")
+				finally:
+					temp_buffer.close()
+				
+				# 生成缩略图
+				try:
+					print("[DEBUG] 生成缩略图...")
+					# 使用thumbnail方法，自动保持纵横比
+					img.thumbnail((80, 80), Image.Resampling.LANCZOS)
+					thumb_path = os.path.join(upload_dir, f"{md5}_thumb.jpg")
+					img.save(thumb_path, format='JPEG', quality=60)
+					print(f"[DEBUG] 缩略图已保存: {thumb_path}")
+				except Exception as e:
+					print(f"[WARNING] 生成缩略图失败: {str(e)}")
 			
 			response = {
 				'status': 'success',
 				'message': '文件上传成功',
 				'file_path': target_path,
 				'md5': md5,
-				'type': extension
+				'type': 'jpg' if not is_mask else extension  # mask保持原格式，其他都是jpg
 			}
 		except Exception as e:
 			print(f"[ERROR] 文件上传失败: {str(e)}")

@@ -137,6 +137,7 @@ class TaskQueue:
 			image_dir = 'image/'
 			files_to_delete = [
 				f"{md5}.jpg", f"{md5}.png", f"{md5}.gif",
+				f"{md5}_thumb.jpg", f"{md5}_thumb.png", f"{md5}_thumb.gif",
 				f"{md5}_mask.jpg", f"{md5}_mask.png", f"{md5}_mask.gif",
 				f"{md5}_lama.jpg", f"{md5}_lama_thumb.jpg"
 			]
