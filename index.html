@@ -47,6 +47,26 @@
 			flex-wrap: wrap;
 		}
 
+		.edit-mode-controls {
+			display: flex;
+			gap: 5px;
+			margin-right: 15px;
+		}
+
+		.mode-btn {
+			padding: 4px 8px;
+			border: 1px solid #ccc;
+			background: #f5f5f5;
+			cursor: pointer;
+			border-radius: 4px;
+		}
+
+		.mode-btn.active {
+			background: #4CAF50;
+			color: white;
+			border-color: #4CAF50;
+		}
+
 		.canvas-container {
 			position: relative;
 			overflow: auto;
@@ -112,11 +132,13 @@
 			gap: 5px;
 			margin-top: 10px;
 			flex-wrap: nowrap;
+			justify-content: center;
 		}
 
 		.all-controls button {
-			flex: 1;
+			flex: 0 1 auto;
 			white-space: nowrap;
+			margin: 0 5px;
 		}
 
 		@media (max-width: 768px) {
@@ -502,6 +524,19 @@
 			background: #ccc;
 			cursor: not-allowed;
 		}
+
+		/* 添加鼠标样式 */
+		.canvas-container.mode-add {
+			cursor: crosshair;
+		}
+
+		.canvas-container.mode-erase {
+			cursor: crosshair;
+		}
+
+		.canvas-container.mode-move {
+			cursor: move;
+		}
 	</style>
 </head>
 
@@ -510,15 +545,19 @@
 		<div class="controls">
 			<input type="file" id="imageInput" accept="image/*"><button id="uploadImageLamaBtn" class="lama-btn">Lama擦除</button>
 			<div class="brush-controls">
+				<div class="edit-mode-controls">
+					<button class="mode-btn active" data-mode="add">添加遮罩</button>
+					<button class="mode-btn" data-mode="erase">删除遮罩</button>
+					<button class="mode-btn" data-mode="move">移动图片</button>
+				</div>
 				<label>画笔大小: <span id="brushSize">10</span>px</label>
 				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
 				<button id="undoBtn">撤销</button>
 				<button id="clearBtn">清空</button>
 			</div>
 			<div class="all-controls">
-                <button id="moveUp">↑ 上移</button> <button id="moveDown">↓ 下移</button>
-				<button id="moveLeft">← 左移</button> <button id="moveRight">→ 右移</button>
-				<button id="zoomIn">放大</button> <button id="zoomOut">缩小</button>
+				<button id="zoomIn">放大</button>
+				<button id="zoomOut">缩小</button>
 				<button id="resetZoom">重置</button>
 			</div>
 		</div>
@@ -578,8 +617,10 @@
 				this.maxHistoryLength = 50; // 最大历史记录数
 				// 新增：标记原图是否已上传
 				this.isImageUploaded = false;
+				this.editMode = 'add'; // 默认为添加遮罩模式
 
 				this.setupEventListeners();
+				this.setupModeControls();
 			}
 
 			setupEventListeners() {
@@ -590,7 +631,6 @@
 				document.getElementById('brushSizeInput').addEventListener('input', (e) => {
 					this.brushSize = parseInt(e.target.value);
 					document.getElementById('brushSize').textContent = this.brushSize;
-					// 添加预览圆圈
 					this.showBrushPreview(e);
 				});
 
@@ -617,13 +657,7 @@
 				document.getElementById('zoomOut').addEventListener('click', () => this.zoom(0.8));
 				document.getElementById('resetZoom').addEventListener('click', () => this.resetZoom());
 
-				// 方向控制
-				document.getElementById('moveLeft').addEventListener('click', () => this.move('left'));
-				document.getElementById('moveRight').addEventListener('click', () => this.move('right'));
-				document.getElementById('moveUp').addEventListener('click', () => this.move('up'));
-				document.getElementById('moveDown').addEventListener('click', () => this.move('down'));
-
-				// 上传按钮事件 - 添加存在性检查
+				// 上传按钮事件
 				const uploadImageLamaBtn = document.getElementById('uploadImageLamaBtn');
 				if (uploadImageLamaBtn) {
 					uploadImageLamaBtn.addEventListener('click', () => this.uploadLama());
@@ -634,6 +668,23 @@
 
 				// 添加清除按钮事件
 				document.getElementById('clearBtn').addEventListener('click', () => this.clearMask());
+			}
+
+			setupModeControls() {
+				const modeButtons = document.querySelectorAll('.mode-btn');
+				modeButtons.forEach(btn => {
+					btn.addEventListener('click', () => {
+						// 移除所有按钮的active类
+						modeButtons.forEach(b => b.classList.remove('active'));
+						// 添加当前按钮的active类
+						btn.classList.add('active');
+						// 设置编辑模式
+						this.editMode = btn.dataset.mode;
+						// 更新画布容器的类名
+						const container = this.canvas.parentElement;
+						container.className = 'canvas-container mode-' + this.editMode;
+					});
+				});
 			}
 
 			// 计算文件的MD5值
@@ -789,25 +840,41 @@
 			}
 
 			startDrawing(e) {
+				if (this.editMode === 'move') {
+					this.isPanning = true;
+					const pos = this.getMousePos(e);
+					this.lastX = e.clientX;
+					this.lastY = e.clientY;
+					return;
+				}
+
 				this.isDrawing = true;
 				const pos = this.getMousePos(e);
 				this.lastX = pos.x;
 				this.lastY = pos.y;
-				// 开始绘制前保存状态
 				this.saveToHistory();
-				// 立即绘制一个点
 				this.drawPoint(pos.x, pos.y);
 			}
 
 			draw(e) {
+				if (this.editMode === 'move' && this.isPanning) {
+					const deltaX = e.clientX - this.lastX;
+					const deltaY = e.clientY - this.lastY;
+					this.offsetX += deltaX;
+					this.offsetY += deltaY;
+					this.lastX = e.clientX;
+					this.lastY = e.clientY;
+					this.redrawCanvas();
+					return;
+				}
+
 				if (!this.isDrawing) return;
 
 				const pos = this.getMousePos(e);
 				this.drawPoint(pos.x, pos.y);
 
-				// 连接上一个点和当前点，使线条更流畅
 				this.maskCtx.beginPath();
-				this.maskCtx.strokeStyle = '#fff';
+				this.maskCtx.strokeStyle = this.editMode === 'add' ? '#fff' : '#000';
 				this.maskCtx.lineWidth = (this.brushSize * 2) / this.scale;
 				this.maskCtx.lineCap = 'round';
 				this.maskCtx.moveTo(this.lastX, this.lastY);
@@ -820,8 +887,9 @@
 			}
 
 			drawPoint(x, y) {
-				// 在遮罩画布上绘制白色圆点
-				this.maskCtx.fillStyle = '#fff';
+				if (this.editMode === 'move') return;
+				
+				this.maskCtx.fillStyle = this.editMode === 'add' ? '#fff' : '#000';
 				this.maskCtx.beginPath();
 				this.maskCtx.arc(x, y, this.brushSize / this.scale, 0, Math.PI * 2);
 				this.maskCtx.fill();
@@ -830,6 +898,7 @@
 
 			stopDrawing() {
 				this.isDrawing = false;
+				this.isPanning = false;
 			}
 
 			getMousePos(e) {
@@ -1010,17 +1079,18 @@
 			}
 
 			showBrushPreview(e) {
+				if (this.editMode === 'move') return;
+
 				const pos = this.getMousePos(e);
 				this.redrawCanvas();
 
-				// 在当前鼠标位置绘制预览圆圈
 				this.ctx.save();
 				this.ctx.translate(this.offsetX, this.offsetY);
 				this.ctx.scale(this.scale, this.scale);
 
 				this.ctx.beginPath();
 				this.ctx.arc(pos.x, pos.y, this.brushSize / this.scale, 0, Math.PI * 2);
-				this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+				this.ctx.strokeStyle = this.editMode === 'add' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.8)';
 				this.ctx.lineWidth = 1 / this.scale;
 				this.ctx.stroke();
 
