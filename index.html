@@ -39,6 +39,37 @@
 			flex-shrink: 0;
 		}
 
+		/* 添加文件输入框样式 */
+		.file-input-container {
+			display: inline-flex;
+			align-items: center;
+			gap: 10px;
+		}
+
+		.file-input-container input[type="file"] {
+			display: none;
+		}
+
+		.file-input-label {
+			padding: 4px 8px;
+			background-color: #4CAF50;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+			font-size: 12px;
+			min-width: 40px;
+		}
+
+		.file-input-label:hover {
+			background-color: #45a049;
+		}
+
+		.file-info {
+			font-size: 12px;
+			color: #666;
+		}
+
 		.brush-controls {
 			margin-top: 15px;
 			display: flex;
@@ -57,6 +88,7 @@
 			padding: 4px 8px;
 			border: 1px solid #ccc;
 			background: #f5f5f5;
+			color: darkgray;
 			cursor: pointer;
 			border-radius: 4px;
 		}
@@ -543,22 +575,27 @@
 <body>
 	<div class="container">
 		<div class="controls">
-			<input type="file" id="imageInput" accept="image/*"><button id="uploadImageLamaBtn" class="lama-btn">Lama擦除</button>
+			<div class="file-input-container">
+				<input type="file" id="imageInput" accept="image/*">
+				<label for="imageInput" class="file-input-label">选择图片</label>
+			</div>
+			<button id="uploadImageLamaBtn" class="lama-btn">智能擦除</button>
 			<div class="brush-controls">
 				<div class="edit-mode-controls">
-					<button class="mode-btn active" data-mode="add">添加遮罩</button>
-					<button class="mode-btn" data-mode="erase">删除遮罩</button>
+					<button class="mode-btn active" data-mode="add">绘制蒙版</button>
+					<button class="mode-btn" data-mode="erase">清除蒙版</button>
 					<button class="mode-btn" data-mode="move">移动图片</button>
 				</div>
-				<label>画笔大小: <span id="brushSize">10</span>px</label>
+				<label>画笔: <span id="brushSize">10</span>px</label>
 				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
-				<button id="undoBtn">撤销</button>
-				<button id="clearBtn">清空</button>
+				<button id="undoBtn">撤销编辑</button>
+				<button id="clearBtn">清空蒙版</button>
 			</div>
 			<div class="all-controls">
 				<button id="zoomIn">放大</button>
 				<button id="zoomOut">缩小</button>
-				<button id="resetZoom">重置</button>
+				<button id="resetZoom">原始大小</button>
+				<button id="fitScreen">显示全图</button>
 			</div>
 		</div>
 		
@@ -625,7 +662,23 @@
 
 			setupEventListeners() {
 				// 文件输入处理
-				document.getElementById('imageInput').addEventListener('change', (e) => this.loadImage(e));
+				document.getElementById('imageInput').addEventListener('change', (e) => {
+					// 创建或获取文件信息显示元素
+					let fileInfo = document.querySelector('.file-info');
+					if (!fileInfo) {
+						fileInfo = document.createElement('span');
+						fileInfo.className = 'file-info';
+						document.querySelector('.file-input-container').appendChild(fileInfo);
+					}
+
+					const file = e.target.files[0];
+					if (!file) {
+						fileInfo.textContent = '';
+						return;
+					}
+
+					this.loadImage(e);
+				});
 
 				// 画笔大小控制
 				document.getElementById('brushSizeInput').addEventListener('input', (e) => {
@@ -656,6 +709,7 @@
 				document.getElementById('zoomIn').addEventListener('click', () => this.zoom(1.2));
 				document.getElementById('zoomOut').addEventListener('click', () => this.zoom(0.8));
 				document.getElementById('resetZoom').addEventListener('click', () => this.resetZoom());
+				document.getElementById('fitScreen').addEventListener('click', () => this.fitScreen());
 
 				// 上传按钮事件
 				const uploadImageLamaBtn = document.getElementById('uploadImageLamaBtn');
@@ -717,13 +771,18 @@
 					reader.onload = async (e) => {
 						this.originalImage = new Image();
 						this.originalImage.onload = async () => {
+							// 获取文件信息显示元素
+							const fileInfo = document.querySelector('.file-info');
+							
 							// 添加图片尺寸限制逻辑
 							let width = this.originalImage.width;
 							let height = this.originalImage.height;
 
 							// 检查是否需要缩放
 							const MAX_SIZE = 1920;
+							let needsResize = false;
 							if (width > MAX_SIZE || height > MAX_SIZE) {
+								needsResize = true;
 								if (width > height) {
 									// 宽度为主要维度
 									height = Math.round((height * MAX_SIZE) / width);
@@ -732,6 +791,12 @@
 									// 高度为主要维度
 									width = Math.round((width * MAX_SIZE) / height);
 									height = MAX_SIZE;
+								}
+
+								// 显示分辨率信息
+								if (fileInfo) {
+									fileInfo.textContent = `${this.originalImage.width} × ${this.originalImage.height} → ${width} × ${height}`;
+									showToast(`图片尺寸过大，将自动缩放至 ${width} × ${height}`);
 								}
 
 								// 创建临时画布进行缩放
@@ -754,9 +819,12 @@
 								});
 
 								this.originalImage = scaledImage;
+							} else if (fileInfo) {
+								// 如果不需要缩放，只显示原始尺寸
+								fileInfo.textContent = `${width} × ${height}`;
 							}
 
-							// 设置画布尺寸为缩放后的尺寸
+							// 设置画布尺寸
 							this.canvas.width = width;
 							this.canvas.height = height;
 							// 设置遮罩画布尺寸
@@ -796,16 +864,12 @@
 							const scaleY = (containerHeight - 40) / height;
 							this.scale = Math.min(scaleX, scaleY, 1);
 
-							// 计算居中位置, 修改此处
+							// 计算居中位置
 							this.offsetX = (containerWidth - width * this.scale) / 2;
-							this.offsetY = 0; // 将 offsetY 设置为 0
+							this.offsetY = 0;
 
 							this.redrawCanvas();
 
-							// 如果图片被缩放了，显示提示信息
-							if (this.originalImage.width !== this.canvas.width || this.originalImage.height !== this.canvas.height) {
-								showToast(`图片已自动缩放至 ${width}x${height}`);
-							}
 							// 重置图片上传状态
 							this.isImageUploaded = false;
 						};
@@ -928,6 +992,28 @@
 				this.scale = 1;
 				this.offsetX = 0;
 				this.offsetY = 0;
+				this.redrawCanvas();
+			}
+
+			// 添加适应屏幕方法
+			fitScreen() {
+				if (!this.originalImage) return;
+
+				const container = this.canvas.parentElement;
+				const containerWidth = container.clientWidth;
+				const containerHeight = container.clientHeight;
+				const imageWidth = this.canvas.width;
+				const imageHeight = this.canvas.height;
+
+				// 计算适应屏幕的缩放比例
+				const scaleX = (containerWidth - 40) / imageWidth;
+				const scaleY = (containerHeight - 40) / imageHeight;
+				this.scale = Math.min(scaleX, scaleY);
+
+				// 计算居中位置
+				this.offsetX = (containerWidth - imageWidth * this.scale) / 2;
+				this.offsetY = (containerHeight - imageHeight * this.scale) / 2;
+
 				this.redrawCanvas();
 			}
 
@@ -1289,7 +1375,7 @@
 					<div class="task-item">
 						<div class="task-info">
 							<div class="task-header">
-								<span class="task-status ${task.status}" onclick="window.editor.loadTask('${md5}')">${statusText}</span>
+								<span class="task-status ${task.status}" onclick="window.editor.loadTask('${md5}')">${statusText} ${task.progress}%</span>
 								<span class="task-time" onclick="window.editor.loadTask('${md5}')">${timeStr}</span>
 								<button class="delete-btn" onclick="deleteTask('${md5}')">删除</button>
 								${task.status === 'completed' ? `<button class="relama-btn" onclick="reLama('${md5}')">再擦一次</button>` : ''}
@@ -1411,7 +1497,7 @@
 		});
 
 		// 添加全局 showToast 函数
-		function showToast(message, duration = 3000) {
+		function showToast(message, duration = 5000) {
 			const toast = document.getElementById('toast');
 			toast.textContent = message;
 			toast.style.display = 'block';
