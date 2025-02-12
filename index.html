@@ -1064,6 +1064,110 @@
 				this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
 				this.redrawCanvas();
 			}
+
+			async loadTask(md5) {
+				try {
+					// 加载原始图片
+					const originalImage = new Image();
+					originalImage.src = `/image/${md5}.jpg?t=${Date.now()}`;
+					
+					await new Promise((resolve, reject) => {
+						originalImage.onload = resolve;
+						originalImage.onerror = () => reject(new Error('加载原始图片失败'));
+					});
+					
+					// 设置MD5和图片
+					this.imageMD5 = md5;
+					this.originalImage = originalImage;
+					this.isImageUploaded = true; // 标记图片已上传
+					
+					// 设置画布尺寸
+					let width = originalImage.width;
+					let height = originalImage.height;
+					
+					// 检查是否需要缩放
+					const MAX_SIZE = 1920;
+					if (width > MAX_SIZE || height > MAX_SIZE) {
+						if (width > height) {
+							height = Math.round((height * MAX_SIZE) / width);
+							width = MAX_SIZE;
+						} else {
+							width = Math.round((width * MAX_SIZE) / height);
+							height = MAX_SIZE;
+						}
+						
+						// 创建临时画布进行缩放
+						const tempCanvas = document.createElement('canvas');
+						tempCanvas.width = width;
+						tempCanvas.height = height;
+						const tempCtx = tempCanvas.getContext('2d');
+						
+						tempCtx.imageSmoothingEnabled = true;
+						tempCtx.imageSmoothingQuality = 'high';
+						tempCtx.drawImage(originalImage, 0, 0, width, height);
+						
+						const scaledImage = new Image();
+						scaledImage.src = tempCanvas.toDataURL('image/jpeg', 0.95);
+						
+						await new Promise(resolve => {
+							scaledImage.onload = resolve;
+						});
+						
+						this.originalImage = scaledImage;
+					}
+					
+					// 设置画布尺寸
+					this.canvas.width = width;
+					this.canvas.height = height;
+					this.maskCanvas.width = width;
+					this.maskCanvas.height = height;
+					
+					// 加载遮罩
+					try {
+						const maskResponse = await fetch(`/image/${md5}_mask.png?t=${Date.now()}`);
+						if (maskResponse.ok) {
+							const maskBlob = await maskResponse.blob();
+							const maskUrl = URL.createObjectURL(maskBlob);
+							const maskImage = new Image();
+							await new Promise((resolve, reject) => {
+								maskImage.onload = resolve;
+								maskImage.onerror = reject;
+								maskImage.src = maskUrl;
+							});
+							
+							this.maskCtx.drawImage(maskImage, 0, 0, width, height);
+							URL.revokeObjectURL(maskUrl);
+						} else {
+							// 如果遮罩不存在，创建新的黑色遮罩
+							this.maskCtx.fillStyle = '#000';
+							this.maskCtx.fillRect(0, 0, width, height);
+						}
+					} catch (error) {
+						console.error('加载遮罩失败:', error);
+						this.maskCtx.fillStyle = '#000';
+						this.maskCtx.fillRect(0, 0, width, height);
+					}
+					
+					// 计算适应屏幕的缩放比例
+					const container = this.canvas.parentElement;
+					const containerWidth = container.clientWidth;
+					const containerHeight = container.clientHeight;
+					const scaleX = (containerWidth - 40) / width;
+					const scaleY = (containerHeight - 40) / height;
+					this.scale = Math.min(scaleX, scaleY, 1);
+					
+					// 计算居中位置
+					this.offsetX = (containerWidth - width * this.scale) / 2;
+					this.offsetY = 0;
+					
+					this.redrawCanvas();
+					showToast('任务加载成功');
+					
+				} catch (error) {
+					console.error('加载任务失败:', error);
+					showToast('加载任务失败: ' + error.message);
+				}
+			}
 		}
 
 		// 添加全局变量
@@ -1115,8 +1219,8 @@
 					<div class="task-item">
 						<div class="task-info">
 							<div class="task-header">
-								<span class="task-status ${task.status}">${statusText}</span>
-								<span class="task-time">${timeStr}</span>
+								<span class="task-status ${task.status}" onclick="window.editor.loadTask('${md5}')">${statusText}</span>
+								<span class="task-time" onclick="window.editor.loadTask('${md5}')">${timeStr}</span>
 								<button class="delete-btn" onclick="deleteTask('${md5}')">删除</button>
 								${task.status === 'completed' ? `<button class="relama-btn" onclick="reLama('${md5}')">再擦一次</button>` : ''}
 							</div>
