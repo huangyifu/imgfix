@@ -86,6 +86,36 @@ class UploadHandler(BaseHTTPRequestHandler):
 		self.send_header('Access-Control-Allow-Headers', 'Content-Type')
 		self.end_headers()
 
+	def handle_delete_task(self):
+		"""处理删除任务的请求"""
+		try:
+			# 获取请求体中的数据
+			content_length = int(self.headers.get('Content-Length', 0))
+			post_data = self.rfile.read(content_length)
+			data = json.loads(post_data)
+			
+			if 'md5' not in data:
+				return {
+					'status': 'error',
+					'message': '缺少 md5 参数'
+				}
+			
+			# 删除任务及相关文件
+			return task_queue.delete_task(data['md5'])
+		except json.JSONDecodeError:
+			return {
+				'status': 'error',
+				'message': 'JSON解析失败'
+			}
+		except Exception as e:
+			print(f"[ERROR] 删除任务失败: {str(e)}")
+			import traceback
+			print(f"[ERROR] 详细错误信息: {traceback.format_exc()}")
+			return {
+				'status': 'error',
+				'message': f'删除任务失败: {str(e)}'
+			}
+
 	def parse_multipart(self):
 		content_type = self.headers.get('Content-Type')
 		if not content_type:
@@ -240,9 +270,15 @@ class UploadHandler(BaseHTTPRequestHandler):
 		self.send_header('Content-Type', 'application/json')
 		self.send_header('Access-Control-Allow-Origin', '*')
 		self.end_headers()
-
+		
 		# 解析请求路径
 		parsed_path = urlparse(self.path)
+		
+		# 处理删除任务请求
+		if parsed_path.path == '/delete_task':
+			response = self.handle_delete_task()
+			self.wfile.write(json.dumps(response).encode())
+			return
 		
 		# 处理 /lama 路径的请求
 		if parsed_path.path == '/lama':

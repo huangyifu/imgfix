@@ -116,6 +116,46 @@ class TaskQueue:
 				if task['status'] == 'pending':
 					return md5
 			return None
+	
+	def delete_task(self, md5):
+		"""删除指定的任务及其相关文件
+		:param md5: 任务的md5值
+		:return: 包含删除状态和消息的字典
+		"""
+		with self.lock:
+			if md5 not in self.tasks:
+				return {
+					'status': 'error',
+					'message': '任务不存在'
+				}
+			
+			# 删除任务数据
+			del self.tasks[md5]
+			self._save_tasks()
+			
+			# 删除相关图片文件
+			image_dir = 'image/'
+			files_to_delete = [
+				f"{md5}.jpg", f"{md5}.png", f"{md5}.gif",
+				f"{md5}_mask.jpg", f"{md5}_mask.png", f"{md5}_mask.gif",
+				f"{md5}_lama.jpg", f"{md5}_lama_thumb.jpg"
+			]
+			
+			deleted_files = []
+			for filename in files_to_delete:
+				file_path = os.path.join(image_dir, filename)
+				if os.path.exists(file_path):
+					try:
+						os.remove(file_path)
+						deleted_files.append(filename)
+					except Exception as e:
+						print(f"[WARNING] 删除文件 {filename} 失败: {str(e)}")
+			
+			return {
+				'status': 'success',
+				'message': '任务删除成功',
+				'deleted_files': deleted_files
+			}
 
 # 创建全局任务队列实例
 task_queue = TaskQueue() 

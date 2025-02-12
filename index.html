@@ -261,8 +261,8 @@
 		}
 		
 		.task-list {
-			max-height: 200px;
-			overflow-y: auto;
+			max-height: none;
+			overflow-y: visible;
 		}
 		
 		.task-item {
@@ -426,6 +426,45 @@
 			font-size: 12px;
 			color: #666;
 		}
+
+		/* 添加删除按钮样式 */
+		.delete-btn {
+			background: #ff4444;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			padding: 2px 8px;
+			font-size: 12px;
+			cursor: pointer;
+			margin-left: 10px;
+			transition: background-color 0.3s;
+		}
+		
+		.delete-btn:hover {
+			background: #cc0000;
+		}
+		
+		.task-header {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		
+		.task-time {
+			color: #666;
+			font-size: 12px;
+		}
+
+		/* 添加 Lama 擦除按钮样式 */
+		.lama-btn {
+			background-color: #2196F3 !important;
+			font-weight: bold;
+			padding: 6px 12px !important;
+		}
+		
+		.lama-btn:hover {
+			background-color: #1976D2 !important;
+		}
 	</style>
 </head>
 
@@ -438,7 +477,7 @@
 				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
 				<button id="undoBtn">撤销</button>
 				<button id="clearBtn">清空</button>
-				<button id="uploadImageLamaBtn">Lama擦除</button>
+				<button id="uploadImageLamaBtn" class="lama-btn">Lama擦除</button>
 			</div>
 			<div class="all-controls">
                 <button id="moveUp">↑ 上移</button> <button id="moveDown">↓ 下移</button>
@@ -1062,6 +1101,7 @@
 							<div class="task-header">
 								<span class="task-status ${task.status}">${statusText}</span>
 								<span class="task-time">${timeStr}</span>
+								<button class="delete-btn" onclick="deleteTask('${md5}')">删除</button>
 							</div>
 						</div>
 						${resultImage}
@@ -1134,6 +1174,7 @@
                 }, 500);
             }
         }
+
 		// 修改刷新按钮事件处理
 		document.getElementById('refreshTasksBtn').addEventListener('click', () => {
 			refreshTaskList();
@@ -1173,6 +1214,51 @@
 				localStorage.setItem('taskPanelCollapsed', taskPanel.classList.contains('collapsed'));
 			});
 		});
+
+		// 添加全局 showToast 函数
+		function showToast(message, duration = 3000) {
+			const toast = document.getElementById('toast');
+			toast.textContent = message;
+			toast.style.display = 'block';
+			
+			// 清除之前的定时器
+			if (window.toastTimeout) {
+				clearTimeout(window.toastTimeout);
+			}
+			
+			window.toastTimeout = setTimeout(() => {
+				toast.style.display = 'none';
+			}, duration);
+		}
+
+		// 添加删除任务的函数
+		async function deleteTask(md5) {
+			if (!confirm('确定要删除此任务吗？')) {
+				return;
+			}
+			
+			try {
+				const response = await fetch('/delete_task', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ md5 })
+				});
+				
+				const result = await response.json();
+				if (result.status === 'success') {
+					showToast('任务删除成功');
+					// 刷新任务列表
+					refreshTaskList();
+				} else {
+					showToast('删除失败: ' + result.message);
+				}
+			} catch (error) {
+				console.error('删除任务失败:', error);
+				showToast('删除任务失败: ' + error.message);
+			}
+		}
 	</script>
 </body>
 

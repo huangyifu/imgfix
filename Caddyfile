@@ -10,6 +10,9 @@ img.flmja.com:8000  {
     handle /tasks {
         reverse_proxy localhost:8080
     }
+    handle /delete_task {
+        reverse_proxy localhost:8080
+    }
 
     # 默认文档处理
     handle {
