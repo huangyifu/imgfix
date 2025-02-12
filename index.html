@@ -658,12 +658,15 @@
 				this.touchStartTime = 0;  // 用于区分点击和拖动
 				this.imageMD5 = null;  // 存储原图的MD5值
 				this.isMaskModified = false;  // 新增：标记遮罩是否被修改
+				this.isMultiTouch = false;  // 新增：标记是否在多点触控状态
 				// 添加历史记录数组
 				this.history = [];
 				this.maxHistoryLength = 50; // 最大历史记录数
 				// 新增：标记原图是否已上传
 				this.isImageUploaded = false;
 				this.editMode = 'add'; // 默认为添加遮罩模式
+				this.isTouchDevice = false;  // 新增：标记是否为触摸设备
+				this.lastTouchCenter = null;  // 新增：记录上一次双指中心点
 
 				this.setupEventListeners();
 				this.setupModeControls();
@@ -708,11 +711,30 @@
 					this.redrawCanvas();
 				});
 
-				// 绘画事件
-				this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
-				this.canvas.addEventListener('pointermove', (e) => this.draw(e));
-				this.canvas.addEventListener('pointerup', () => this.stopDrawing());
-				this.canvas.addEventListener('pointerout', () => this.stopDrawing());
+				// 修改绘画事件
+				this.canvas.addEventListener('pointerdown', (e) => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.startDrawing(e);
+				});
+				
+				this.canvas.addEventListener('pointermove', (e) => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.draw(e);
+				});
+				
+				this.canvas.addEventListener('pointerup', () => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.stopDrawing();
+				});
+				
+				this.canvas.addEventListener('pointerout', () => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.stopDrawing();
+				});
 
 				// 缩放控制
 				document.getElementById('zoomIn').addEventListener('click', () => this.zoom(1.2));
@@ -731,6 +753,87 @@
 
 				// 添加清除按钮事件
 				document.getElementById('clearBtn').addEventListener('click', () => this.clearMask());
+
+				// 修改触摸事件处理
+				this.canvas.addEventListener('touchstart', (e) => {
+					// 标记为触摸设备
+					this.isTouchDevice = true;
+					
+					if (e.touches.length === 2) {
+						// 设置多点触控标记
+						this.isMultiTouch = true;
+						// 停止绘制状态
+						this.isDrawing = false;
+						// 阻止默认行为以防止页面缩放
+						e.preventDefault();
+						
+						// 计算两个触摸点之间的初始距离
+						this.lastTouchDistance = Math.hypot(
+							e.touches[0].clientX - e.touches[1].clientX,
+							e.touches[0].clientY - e.touches[1].clientY
+						);
+						
+						// 记录初始触摸中心点
+						this.lastTouchCenter = {
+							x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+							y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+						};
+					} else if (!this.isMultiTouch) {
+						// 只有在非多点触控状态下才允许开始绘制
+						const pos = this.getMousePos(e.touches[0]);
+						this.lastX = pos.x;
+						this.lastY = pos.y;
+						this.isDrawing = true;
+						this.saveToHistory();
+					}
+				}, { passive: false });
+
+				this.canvas.addEventListener('touchmove', (e) => {
+					if (e.touches.length === 2 && this.isMultiTouch) {
+						// 阻止默认行为以防止页面缩放
+						e.preventDefault();
+						
+						// 计算新的触摸点距离和中心点
+						const newDistance = Math.hypot(
+							e.touches[0].clientX - e.touches[1].clientX,
+							e.touches[0].clientY - e.touches[1].clientY
+						);
+						
+						const newCenter = {
+							x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+							y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+						};
+						
+						if (this.lastTouchDistance && this.lastTouchCenter) {
+							// 计算缩放比例
+							const scale = newDistance / this.lastTouchDistance;
+							
+							// 计算平移距离
+							const deltaX = newCenter.x - this.lastTouchCenter.x;
+							const deltaY = newCenter.y - this.lastTouchCenter.y;
+							
+							// 应用缩放和平移
+							this.zoomAndPan(scale, deltaX, deltaY, newCenter.x - this.canvas.getBoundingClientRect().left, newCenter.y - this.canvas.getBoundingClientRect().top);
+						}
+						
+						this.lastTouchDistance = newDistance;
+						this.lastTouchCenter = newCenter;
+					} else if (this.isDrawing && !this.isMultiTouch) {
+						// 只有在非多点触控状态下才进行绘制
+						const pos = this.getMousePos(e.touches[0]);
+						this.draw(e.touches[0]);
+					}
+				}, { passive: false });
+
+				this.canvas.addEventListener('touchend', (e) => {
+					if (e.touches.length === 0) {
+						// 当所有手指都离开时，重置多点触控状态
+						this.isMultiTouch = false;
+						this.lastTouchDistance = null;
+						this.lastTouchCenter = null;
+						this.isDrawing = false;
+					}
+				});
 			}
 
 			setupModeControls() {
@@ -921,6 +1024,9 @@
 					return;
 				}
 
+				// 如果是触摸事件,跳过指针事件处理
+				if (e.pointerType === 'touch') return;
+
 				this.isDrawing = true;
 				const pos = this.getMousePos(e);
 				this.lastX = pos.x;
@@ -930,6 +1036,9 @@
 			}
 
 			draw(e) {
+				// 如果是触摸事件,跳过指针事件处理
+				if (e.pointerType === 'touch') return;
+
 				if (this.editMode === 'move' && this.isPanning) {
 					const deltaX = e.clientX - this.lastX;
 					const deltaY = e.clientY - this.lastY;
@@ -1332,6 +1441,24 @@
 					console.error('加载任务失败:', error);
 					showToast('加载任务失败: ' + error.message);
 				}
+			}
+
+			// 添加缩放和平移组合方法
+			zoomAndPan(factor, deltaX, deltaY, centerX, centerY) {
+				const oldScale = this.scale;
+				this.scale *= factor;
+				this.scale = Math.min(Math.max(0.1, this.scale), 10);
+
+				// 调整偏移以保持缩放中心点不变
+				const scaleChange = this.scale - oldScale;
+				this.offsetX -= (centerX * scaleChange);
+				this.offsetY -= (centerY * scaleChange);
+
+				// 应用平移
+				this.offsetX += deltaX;
+				this.offsetY += deltaY;
+
+				requestAnimationFrame(() => this.redrawCanvas());
 			}
 		}
 
