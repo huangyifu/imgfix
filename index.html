@@ -770,7 +770,6 @@
 						this.isMultiTouch = true;
 						// 停止绘制状态
 						this.isDrawing = false;
-						this.isPanning = false;
 						// 阻止默认行为以防止页面缩放
 						e.preventDefault();
 						
@@ -786,19 +785,12 @@
 							y: (e.touches[0].clientY + e.touches[1].clientY) / 2
 						};
 					} else if (!this.isMultiTouch) {
-						// 只有在非多点触控状态下才允许开始绘制或移动
-						if (this.editMode === 'move') {
-							this.isPanning = true;
-							const touch = e.touches[0];
-							this.lastX = touch.clientX;
-							this.lastY = touch.clientY;
-						} else {
-							const pos = this.getMousePos(e.touches[0]);
-							this.lastX = pos.x;
-							this.lastY = pos.y;
-							this.isDrawing = true;
-							this.saveToHistory();
-						}
+						// 只有在非多点触控状态下才允许开始绘制
+						const pos = this.getMousePos(e.touches[0]);
+						this.lastX = pos.x;
+						this.lastY = pos.y;
+						this.isDrawing = true;
+						this.saveToHistory();
 					}
 				}, { passive: false });
 
@@ -832,32 +824,20 @@
 						
 						this.lastTouchDistance = newDistance;
 						this.lastTouchCenter = newCenter;
-					} else if (!this.isMultiTouch) {
-						// 只有在非多点触控状态下才进行绘制或移动
-						if (this.editMode === 'move' && this.isPanning) {
-							const touch = e.touches[0];
-							const deltaX = touch.clientX - this.lastX;
-							const deltaY = touch.clientY - this.lastY;
-							this.offsetX += deltaX;
-							this.offsetY += deltaY;
-							this.lastX = touch.clientX;
-							this.lastY = touch.clientY;
-							this.redrawCanvas();
-						} else if (this.isDrawing) {
-							const pos = this.getMousePos(e.touches[0]);
-							this.draw(e.touches[0]);
-						}
+					} else if (this.isDrawing && !this.isMultiTouch) {
+						// 只有在非多点触控状态下才进行绘制
+						const pos = this.getMousePos(e.touches[0]);
+						this.draw(e.touches[0]);
 					}
 				}, { passive: false });
 
 				this.canvas.addEventListener('touchend', (e) => {
 					if (e.touches.length === 0) {
-						// 当所有手指都离开时，重置所有状态
+						// 当所有手指都离开时，重置多点触控状态
 						this.isMultiTouch = false;
 						this.lastTouchDistance = null;
 						this.lastTouchCenter = null;
 						this.isDrawing = false;
-						this.isPanning = false;
 					}
 				});
 			}
@@ -1050,8 +1030,8 @@
 					return;
 				}
 
-				// 如果是触摸事件且在多点触控状态,跳过
-				if (e.pointerType === 'touch' && this.isMultiTouch) return;
+				// 如果是触摸事件,跳过指针事件处理
+				if (e.pointerType === 'touch') return;
 
 				this.isDrawing = true;
 				const pos = this.getMousePos(e);
@@ -1062,8 +1042,8 @@
 			}
 
 			draw(e) {
-				// 如果是触摸事件且在多点触控状态,跳过
-				if (e.pointerType === 'touch' && this.isMultiTouch) return;
+				// 如果是触摸事件,跳过指针事件处理
+				if (e.pointerType === 'touch') return;
 
 				if (this.editMode === 'move' && this.isPanning) {
 					const deltaX = e.clientX - this.lastX;
