@@ -247,9 +247,9 @@
 		/* 添加任务列表样式 */
 		.task-panel {
 			background: white;
-			padding: 10px;
+			padding: 5px;
 			border-radius: 8px;
-			margin: 10px 0;
+			margin: 5px 0;
 			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 			transition: all 0.3s ease;
 		}
@@ -275,7 +275,7 @@
 		.task-panel.collapsed .task-header {
 			border-bottom: none;
 			margin-bottom: 0;
-			padding-bottom: 10px;
+			padding-bottom: 5px;
 		}
 		
 		.task-header:hover {
@@ -322,9 +322,7 @@
 		.task-item {
 			display: flex;
 			align-items: center;
-			padding: 8px;
-			border-bottom: 1px solid #eee;
-			gap: 10px;
+			padding: 2px 5px;
 		}
 		
 		.task-item:last-child {
@@ -337,8 +335,8 @@
 		
 		.task-status {
 			font-size: 12px;
-			padding: 2px 6px;
-			border-radius: 4px;
+			padding: 1px 4px;
+			border-radius: 3px;
 			color: white;
 		}
 		
@@ -358,23 +356,9 @@
 			background: #F44336;
 		}
 		
-		.task-progress {
-			height: 4px;
-			background: #eee;
-			border-radius: 2px;
-			margin-top: 4px;
-		}
-		
-		.task-progress-bar {
-			height: 100%;
-			background: #4CAF50;
-			border-radius: 2px;
-			transition: width 0.3s ease;
-		}
-		
 		.task-result {
-			width: 40px;
-			height: 40px;
+			width: 30px;
+			height: 30px;
 			object-fit: cover;
 			border-radius: 4px;
 			cursor: pointer;
@@ -389,30 +373,15 @@
 		.task-images {
 			display: flex;
 			align-items: center;
-			gap: 10px;
-			margin-top: 8px;
+			gap: 3px;
+			margin: 0;
 		}
 
 		.task-images .arrow {
 			color: #4CAF50;
-			font-size: 20px;
+			font-size: 16px;
 			font-weight: bold;
-		}
-		
-		@media (max-width: 768px) {
-			.task-panel {
-				margin: 5px 0;
-				padding: 5px;
-			}
-			
-			.task-item {
-				padding: 5px;
-			}
-			
-			.task-result {
-				width: 30px;
-				height: 30px;
-			}
+			margin: 0;
 		}
 
 		/* 添加刷新按钮样式 */
@@ -497,11 +466,11 @@
 			background: #ff4444;
 			color: white;
 			border: none;
-			border-radius: 4px;
-			padding: 2px 8px;
+			border-radius: 3px;
+			padding: 1px 4px;
 			font-size: 12px;
 			cursor: pointer;
-			margin-left: 10px;
+			margin-left: 6px;
 			transition: background-color 0.3s;
 		}
 		
@@ -512,7 +481,7 @@
 		.task-header {
 			display: flex;
 			align-items: center;
-			gap: 8px;
+			gap: 4px;
 		}
 		
 		.task-time {
@@ -536,11 +505,11 @@
 			background: #2196F3;
 			color: white;
 			border: none;
-			border-radius: 4px;
-			padding: 2px 8px;
+			border-radius: 3px;
+			padding: 1px 4px;
 			font-size: 12px;
 			cursor: pointer;
-			margin-left: 10px;
+			margin-left: 6px;
 			transition: background-color 0.3s;
 		}
 
@@ -575,7 +544,7 @@
 				<input type="file" id="imageInput" accept="image/*">
 				<label for="imageInput" class="file-input-label">选择图片</label>
 			</div>
-			<button id="uploadImageLamaBtn" class="lama-btn">智能擦除</button>
+			<button id="uploadImageLamaBtn" class="lama-btn">一键擦除</button>
 			<div class="brush-controls">
 				<div class="edit-mode-controls">
 					<button class="mode-btn active" data-mode="add">绘制蒙版</button>
@@ -617,13 +586,6 @@
 		</div>
 		<div class="canvas-container">
 			<canvas id="imageCanvas"></canvas>
-		</div>
-		<div class="gesture-support">
-			<p>手势操作支持：</p>
-			<ul>
-				<li>单指操作：根据当前模式执行绘制/擦除/移动</li>
-				<li>双指操作：支持缩放和平移画布</li>
-			</ul>
 		</div>
 	</div>
 	<div class="toast" id="toast">
@@ -1359,6 +1321,11 @@
 
 			async loadTask(md5) {
 				try {
+					// 加载任务时自动折叠面板
+					const taskPanel = document.getElementById('taskPanel');
+					taskPanel.classList.add('collapsed');
+					localStorage.setItem('taskPanelCollapsed', 'true');
+					
 					// 加载原始图片
 					const originalImage = new Image();
 					originalImage.src = `/image/${md5}.jpg?t=${Date.now()}`;
@@ -1564,12 +1531,16 @@
 		}
         async function refreshTaskList() {
             const refreshBtn = document.getElementById('refreshTasksBtn');
+            const taskPanel = document.getElementById('taskPanel');
             refreshBtn.classList.add('spinning');
             refreshBtn.disabled = true;
 
             try {
                 const data = await getTaskStatus(currentPage);
                 updateTaskList(data);
+                // 刷新时自动展开面板
+                taskPanel.classList.remove('collapsed');
+                localStorage.setItem('taskPanelCollapsed', 'false');
             } catch (error) {
                 console.error('刷新任务列表失败:', error);
                 showToast('刷新任务列表失败: ' + error.message);
