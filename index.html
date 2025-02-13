@@ -534,6 +534,58 @@
 		.canvas-container.mode-move {
 			cursor: move;
 		}
+
+		/* 添加图片预览模态框样式 */
+		.image-preview-modal {
+			display: none;
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0, 0, 0, 0.9);
+			z-index: 1000;
+			overflow: auto;
+			touch-action: none;
+		}
+
+		.preview-image {
+			max-width: 100%;
+			max-height: 100%;
+			margin: auto;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		.close-preview {
+			position: fixed;
+			top: 15px;
+			right: 15px;
+			color: #fff;
+			font-size: 30px;
+			cursor: pointer;
+			width: 40px;
+			height: 40px;
+			line-height: 40px;
+			text-align: center;
+			background: rgba(0, 0, 0, 0.5);
+			border-radius: 50%;
+			z-index: 1001;
+		}
+
+		.preview-loading {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			color: #fff;
+			font-size: 16px;
+			z-index: 1001;
+		}
 	</style>
 </head>
 
@@ -590,6 +642,13 @@
 	</div>
 	<div class="toast" id="toast">
 		<!-- Toast content will be dynamically added here -->
+	</div>
+
+	<!-- 添加图片预览模态框 -->
+	<div class="image-preview-modal" id="imagePreviewModal">
+		<div class="close-preview" id="closePreview">×</div>
+		<div class="preview-loading" id="previewLoading">加载中...</div>
+		<img class="preview-image" id="previewImage">
 	</div>
 
 	<script>
@@ -1457,9 +1516,9 @@
 				}[task.status];
 				
 				// 添加原始图片和处理后的图片显示
-				const originalImage = `<img src="/image/${md5}_thumb.jpg?t=${Date.now()}" class="task-result" onclick="window.open('/image/${md5}.jpg?t=${Date.now()}')" title="原始图片">`;
+				const originalImage = `<img src="/image/${md5}_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}.jpg')" title="原始图片">`;
 				const resultImage = task.status === 'completed' ? 
-					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="window.open('/image/${md5}_lama.jpg?t=${Date.now()}')" title="处理后图片">` : '';
+					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}_lama.jpg')" title="处理后图片">` : '';
 				
 				const timeStr = new Date(task.create_time * 1000).toLocaleString();
 				
@@ -1661,6 +1720,89 @@
 				showToast('再次Lama失败: ' + error.message);
 			}
 		}
+
+		// 添加图片预览相关函数
+		function previewImage(url) {
+			const modal = document.getElementById('imagePreviewModal');
+			const previewImage = document.getElementById('previewImage');
+			const loading = document.getElementById('previewLoading');
+
+			// 显示模态框和加载提示
+			modal.style.display = 'block';
+			loading.style.display = 'block';
+			previewImage.style.display = 'none';
+
+			// 加载图片
+			previewImage.onload = function() {
+				loading.style.display = 'none';
+				previewImage.style.display = 'block';
+			};
+			previewImage.src = url + '?t=' + Date.now();
+
+			// 禁止页面滚动
+			document.body.style.overflow = 'hidden';
+
+			// 添加触摸事件处理
+			let startY = 0;
+			let moveY = 0;
+			let initialScale = 1;
+			let currentScale = 1;
+
+			modal.addEventListener('touchstart', function(e) {
+				if (e.touches.length === 1) {
+					startY = e.touches[0].clientY;
+				} else if (e.touches.length === 2) {
+					initialScale = currentScale;
+					const touch1 = e.touches[0];
+					const touch2 = e.touches[1];
+					const dist = Math.hypot(
+						touch1.clientX - touch2.clientX,
+						touch1.clientY - touch2.clientY
+					);
+					startDist = dist;
+				}
+			});
+
+			modal.addEventListener('touchmove', function(e) {
+				if (e.touches.length === 1) {
+					moveY = e.touches[0].clientY - startY;
+					const opacity = 1 - Math.abs(moveY) / (window.innerHeight / 2);
+					modal.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
+					previewImage.style.transform = `translate(-50%, calc(-50% + ${moveY}px)) scale(${currentScale})`;
+				} else if (e.touches.length === 2) {
+					const touch1 = e.touches[0];
+					const touch2 = e.touches[1];
+					const dist = Math.hypot(
+						touch1.clientX - touch2.clientX,
+						touch1.clientY - touch2.clientY
+					);
+					currentScale = initialScale * (dist / startDist);
+					currentScale = Math.min(Math.max(0.5, currentScale), 3);
+					previewImage.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+				}
+			});
+
+			modal.addEventListener('touchend', function(e) {
+				if (Math.abs(moveY) > 100) {
+					closePreview();
+				} else {
+					modal.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+					previewImage.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+					moveY = 0;
+				}
+			});
+		}
+
+		function closePreview() {
+			const modal = document.getElementById('imagePreviewModal');
+			const previewImage = document.getElementById('previewImage');
+			modal.style.display = 'none';
+			previewImage.src = '';
+			document.body.style.overflow = '';
+		}
+
+		// 添加关闭按钮事件监听
+		document.getElementById('closePreview').addEventListener('click', closePreview);
 	</script>
 </body>
 
