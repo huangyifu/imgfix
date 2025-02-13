@@ -535,7 +535,7 @@
 			cursor: move;
 		}
 
-		/* 添加图片预览模态框样式 */
+		/* 修改图片预览模态框样式 */
 		.image-preview-modal {
 			display: none;
 			position: fixed;
@@ -545,8 +545,25 @@
 			height: 100%;
 			background-color: rgba(0, 0, 0, 0.9);
 			z-index: 1000;
-			overflow: auto;
+			overflow: hidden;
 			touch-action: none;
+		}
+
+		.preview-container {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 200%;  /* 容纳两张图片 */
+			height: 100%;
+			display: flex;
+			transition: transform 0.3s ease;
+		}
+
+		.preview-item {
+			width: 50%;  /* 每个预览项占一半宽度 */
+			height: 100%;
+			position: relative;
+			flex-shrink: 0;
 		}
 
 		.preview-image {
@@ -559,6 +576,18 @@
 			transform: translate(-50%, -50%);
 			-webkit-user-select: none;
 			user-select: none;
+		}
+
+		.preview-label {
+			position: absolute;
+			top: 10px;
+			left: 50%;
+			transform: translateX(-50%);
+			color: white;
+			background: rgba(0, 0, 0, 0.5);
+			padding: 5px 10px;
+			border-radius: 15px;
+			font-size: 14px;
 		}
 
 		.close-preview {
@@ -585,6 +614,71 @@
 			color: #fff;
 			font-size: 16px;
 			z-index: 1001;
+		}
+
+		.preview-dots {
+			position: fixed;
+			bottom: 20px;
+			left: 50%;
+			transform: translateX(-50%);
+			display: flex;
+			gap: 10px;
+			z-index: 1001;
+		}
+
+		.preview-dot {
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: rgba(255, 255, 255, 0.5);
+			cursor: pointer;
+		}
+
+		.preview-dot.active {
+			background: white;
+		}
+
+		/* 添加预览箭头样式 */
+		.preview-arrow {
+			position: fixed;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 40px;
+			height: 40px;
+			background: rgba(0, 0, 0, 0.5);
+			border-radius: 50%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			color: white;
+			font-size: 24px;
+			z-index: 1001;
+			transition: all 0.3s ease;
+			user-select: none;
+		}
+
+		.preview-arrow:hover {
+			background: rgba(0, 0, 0, 0.8);
+		}
+
+		.preview-arrow.disabled {
+			opacity: 0.3;
+			cursor: not-allowed;
+		}
+
+		.preview-arrow-left {
+			left: 15px;
+		}
+
+		.preview-arrow-right {
+			right: 15px;
+		}
+
+		/* 修改关闭按钮样式,避免与箭头冲突 */
+		.close-preview {
+			top: 15px;
+			right: 15px;
 		}
 	</style>
 </head>
@@ -644,11 +738,26 @@
 		<!-- Toast content will be dynamically added here -->
 	</div>
 
-	<!-- 添加图片预览模态框 -->
+	<!-- 修改图片预览模态框结构 -->
 	<div class="image-preview-modal" id="imagePreviewModal">
 		<div class="close-preview" id="closePreview">×</div>
 		<div class="preview-loading" id="previewLoading">加载中...</div>
-		<img class="preview-image" id="previewImage">
+		<div class="preview-container" id="previewContainer">
+			<div class="preview-item">
+				<div class="preview-label">原图</div>
+				<img class="preview-image" id="previewImageOriginal">
+			</div>
+			<div class="preview-item">
+				<div class="preview-label">处理后</div>
+				<img class="preview-image" id="previewImageLama">
+			</div>
+		</div>
+		<div class="preview-arrow preview-arrow-left" id="previewArrowLeft">❮</div>
+		<div class="preview-arrow preview-arrow-right" id="previewArrowRight">❯</div>
+		<div class="preview-dots">
+			<div class="preview-dot active" data-index="0"></div>
+			<div class="preview-dot" data-index="1"></div>
+		</div>
 	</div>
 
 	<script>
@@ -1516,9 +1625,9 @@
 				}[task.status];
 				
 				// 添加原始图片和处理后的图片显示
-				const originalImage = `<img src="/image/${md5}_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}.jpg')" title="原始图片">`;
+				const originalImage = `<img src="/image/${md5}_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}.jpg', false)" title="原始图片">`;
 				const resultImage = task.status === 'completed' ? 
-					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}_lama.jpg')" title="处理后图片">` : '';
+					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}_lama.jpg', true)" title="处理后图片">` : '';
 				
 				const timeStr = new Date(task.create_time * 1000).toLocaleString();
 				
@@ -1721,35 +1830,88 @@
 			}
 		}
 
-		// 添加图片预览相关函数
-		function previewImage(url) {
+		// 修改图片预览相关函数
+		function previewImage(url, isLama = false) {
 			const modal = document.getElementById('imagePreviewModal');
-			const previewImage = document.getElementById('previewImage');
+			const container = document.getElementById('previewContainer');
+			const previewImageOriginal = document.getElementById('previewImageOriginal');
+			const previewImageLama = document.getElementById('previewImageLama');
 			const loading = document.getElementById('previewLoading');
+			const dots = document.querySelectorAll('.preview-dot');
+			const arrowLeft = document.getElementById('previewArrowLeft');
+			const arrowRight = document.getElementById('previewArrowRight');
+
+			// 添加当前索引变量
+			let currentIndex = isLama ? 1 : 0;
 
 			// 显示模态框和加载提示
 			modal.style.display = 'block';
 			loading.style.display = 'block';
-			previewImage.style.display = 'none';
+			container.style.display = 'none';
 
-			// 加载图片
-			previewImage.onload = function() {
-				loading.style.display = 'none';
-				previewImage.style.display = 'block';
+			// 获取原图和Lama图的URL
+			const md5 = url.split('/').pop().split('.')[0].replace('_lama', '');
+			const originalUrl = `/image/${md5}.jpg?t=${Date.now()}`;
+			const lamaUrl = `/image/${md5}_lama.jpg?t=${Date.now()}`;
+
+			// 加载两张图片
+			let loadedCount = 0;
+			const onImageLoad = () => {
+				loadedCount++;
+				if (loadedCount === 2) {
+					loading.style.display = 'none';
+					container.style.display = 'flex';
+					// 根据传入的isLama参数决定显示哪张图片
+					showPreviewImage(currentIndex);
+				}
 			};
-			previewImage.src = url + '?t=' + Date.now();
+
+			previewImageOriginal.onload = onImageLoad;
+			previewImageLama.onload = onImageLoad;
+			previewImageOriginal.src = originalUrl;
+			previewImageLama.src = lamaUrl;
 
 			// 禁止页面滚动
 			document.body.style.overflow = 'hidden';
 
+			// 重置容器位置
+			container.style.transform = `translateX(-${currentIndex * 50}%)`;
+			dots.forEach((dot, i) => {
+				if(i === currentIndex) {
+					dot.classList.add('active');
+				} else {
+					dot.classList.remove('active');
+				}
+			});
+
+			// 添加箭头点击事件
+			arrowLeft.onclick = () => {
+				if (currentIndex > 0) {
+					currentIndex--;
+					showPreviewImage(currentIndex);
+				}
+			};
+			arrowRight.onclick = () => {
+				if (currentIndex < 1) {
+					currentIndex++;
+					showPreviewImage(currentIndex);
+				}
+			};
+
+			// 更新箭头状态
+			updateArrowState(currentIndex);
+
 			// 添加触摸事件处理
+			let startX = 0;
 			let startY = 0;
+			let moveX = 0;
 			let moveY = 0;
 			let initialScale = 1;
 			let currentScale = 1;
 
 			modal.addEventListener('touchstart', function(e) {
 				if (e.touches.length === 1) {
+					startX = e.touches[0].clientX;
 					startY = e.touches[0].clientY;
 				} else if (e.touches.length === 2) {
 					initialScale = currentScale;
@@ -1765,10 +1927,19 @@
 
 			modal.addEventListener('touchmove', function(e) {
 				if (e.touches.length === 1) {
+					moveX = e.touches[0].clientX - startX;
 					moveY = e.touches[0].clientY - startY;
-					const opacity = 1 - Math.abs(moveY) / (window.innerHeight / 2);
-					modal.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
-					previewImage.style.transform = `translate(-50%, calc(-50% + ${moveY}px)) scale(${currentScale})`;
+					
+					// 判断滑动方向
+					if (Math.abs(moveX) > Math.abs(moveY)) {
+						// 水平滑动 - 切换图片
+						container.style.transform = `translateX(${-currentIndex * 50}% + ${moveX}px)`;
+						e.preventDefault();
+					} else {
+						// 垂直滑动 - 关闭预览
+						const opacity = 1 - Math.abs(moveY) / (window.innerHeight / 2);
+						modal.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
+					}
 				} else if (e.touches.length === 2) {
 					const touch1 = e.touches[0];
 					const touch2 = e.touches[1];
@@ -1778,26 +1949,84 @@
 					);
 					currentScale = initialScale * (dist / startDist);
 					currentScale = Math.min(Math.max(0.5, currentScale), 3);
-					previewImage.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+					const activeImage = currentIndex === 0 ? previewImageOriginal : previewImageLama;
+					activeImage.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
 				}
 			});
 
 			modal.addEventListener('touchend', function(e) {
-				if (Math.abs(moveY) > 100) {
+				if (Math.abs(moveY) > Math.abs(moveX) && Math.abs(moveY) > 100) {
 					closePreview();
+				} else if (Math.abs(moveX) > 50) {
+					// 切换到下一张/上一张图片
+					if (moveX > 0 && currentIndex > 0) {
+						currentIndex--;
+					} else if (moveX < 0 && currentIndex < 1) {
+						currentIndex++;
+					}
+					showPreviewImage(currentIndex);
 				} else {
-					modal.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
-					previewImage.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
-					moveY = 0;
+					// 回到当前图片
+					showPreviewImage(currentIndex);
 				}
+				moveX = 0;
+				moveY = 0;
 			});
+
+			// 添加点击切换功能
+			dots.forEach(dot => {
+				dot.addEventListener('click', function() {
+					currentIndex = parseInt(this.dataset.index);
+					showPreviewImage(currentIndex);
+				});
+			});
+		}
+
+		function showPreviewImage(index) {
+			const container = document.getElementById('previewContainer');
+			const dots = document.querySelectorAll('.preview-dot');
+			
+			container.style.transform = `translateX(-${index * 50}%)`;
+			dots.forEach(dot => dot.classList.remove('active'));
+			dots[index].classList.add('active');
+			
+			// 更新箭头状态
+			updateArrowState(index);
+			
+			// 重置背景和缩放
+			const modal = document.getElementById('imagePreviewModal');
+			modal.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+			document.getElementById('previewImageOriginal').style.transform = 'translate(-50%, -50%) scale(1)';
+			document.getElementById('previewImageLama').style.transform = 'translate(-50%, -50%) scale(1)';
+		}
+
+		// 添加更新箭头状态的函数
+		function updateArrowState(index) {
+			const arrowLeft = document.getElementById('previewArrowLeft');
+			const arrowRight = document.getElementById('previewArrowRight');
+			
+			// 更新左箭头状态
+			if (index === 0) {
+				arrowLeft.classList.add('disabled');
+			} else {
+				arrowLeft.classList.remove('disabled');
+			}
+			
+			// 更新右箭头状态
+			if (index === 1) {
+				arrowRight.classList.add('disabled');
+			} else {
+				arrowRight.classList.remove('disabled');
+			}
 		}
 
 		function closePreview() {
 			const modal = document.getElementById('imagePreviewModal');
-			const previewImage = document.getElementById('previewImage');
+			const previewImageOriginal = document.getElementById('previewImageOriginal');
+			const previewImageLama = document.getElementById('previewImageLama');
 			modal.style.display = 'none';
-			previewImage.src = '';
+			previewImageOriginal.src = '';
+			previewImageLama.src = '';
 			document.body.style.overflow = '';
 		}
 
