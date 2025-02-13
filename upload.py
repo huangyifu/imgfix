@@ -502,7 +502,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 				target_path = os.path.join(upload_dir, f"{md5}.jpg")
 				
 				# 保存图片并检查文件大小
-				quality = 95
+				quality = 99
 				temp_buffer = BytesIO()
 				try:
 					while True:
@@ -521,7 +521,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 							break
 						
 						# 否则降低质量继续尝试
-						quality -= 5
+						quality -= 3
 						print(f"[DEBUG] 文件过大 ({file_size/1024:.1f}KB)，降低质量到：{quality}")
 				finally:
 					temp_buffer.close()

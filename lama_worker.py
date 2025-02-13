@@ -5,6 +5,7 @@ import torch
 from PIL import Image
 import numpy as np
 from task_queue import task_queue
+from io import BytesIO
 
 class LamaWorker:
 	def __init__(self):
@@ -103,7 +104,32 @@ class LamaWorker:
 			# 保存结果
 			output_image = Image.fromarray(output)
 			output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
-			output_image.save(output_path, quality=85)
+			
+			# 保存图片并检查文件大小
+			quality = 99
+			temp_buffer = BytesIO()
+			try:
+				while True:
+					# 重置缓冲区位置
+					temp_buffer.seek(0)
+					temp_buffer.truncate()
+					
+					# 保存到临时缓冲区以检查大小
+					output_image.save(temp_buffer, format='JPEG', quality=quality)
+					file_size = temp_buffer.tell()
+					
+					# 如果文件小于500KB或质量已经很低，则保存文件
+					if file_size <= 500 * 1024 or quality <= 30:
+						output_image.save(output_path, format='JPEG', quality=quality)
+						print(f"[DEBUG] 图片已保存，质量：{quality}，大小：{file_size/1024:.1f}KB")
+						break
+					
+					# 否则降低质量继续尝试
+					quality -= 3
+					print(f"[DEBUG] 文件过大 ({file_size/1024:.1f}KB)，降低质量到：{quality}")
+			finally:
+				temp_buffer.close()
+			
 			# 保存缩略图
 			thumb = output_image.copy()
 			thumb.thumbnail((80, 80))

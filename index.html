@@ -942,7 +942,7 @@
 
 								// 创建新的Image对象存储缩放后的图片
 								const scaledImage = new Image();
-								scaledImage.src = tempCanvas.toDataURL('image/jpeg', 0.95);
+								scaledImage.src = tempCanvas.toDataURL('image/png');
 
 								await new Promise(resolve => {
 									scaledImage.onload = resolve;
@@ -1142,8 +1142,8 @@
 				const imageHeight = this.canvas.height;
 
 				// 计算适应屏幕的缩放比例
-				const scaleX = (containerWidth - 40) / imageWidth;
-				const scaleY = (containerHeight - 40) / imageHeight;
+				const scaleX = (containerWidth - 1) / imageWidth;
+				const scaleY = (containerHeight - 1) / imageHeight;
 				this.scale = Math.min(scaleX, scaleY);
 
 				// 计算居中位置
@@ -1377,36 +1377,7 @@
 					let width = originalImage.width;
 					let height = originalImage.height;
 					
-					// 检查是否需要缩放
-					const MAX_SIZE = 1920;
-					if (width > MAX_SIZE || height > MAX_SIZE) {
-						if (width > height) {
-							height = Math.round((height * MAX_SIZE) / width);
-							width = MAX_SIZE;
-						} else {
-							width = Math.round((width * MAX_SIZE) / height);
-							height = MAX_SIZE;
-						}
-						
-						// 创建临时画布进行缩放
-						const tempCanvas = document.createElement('canvas');
-						tempCanvas.width = width;
-						tempCanvas.height = height;
-						const tempCtx = tempCanvas.getContext('2d');
-						
-						tempCtx.imageSmoothingEnabled = true;
-						tempCtx.imageSmoothingQuality = 'high';
-						tempCtx.drawImage(originalImage, 0, 0, width, height);
-						
-						const scaledImage = new Image();
-						scaledImage.src = tempCanvas.toDataURL('image/jpeg', 0.95);
-						
-						await new Promise(resolve => {
-							scaledImage.onload = resolve;
-						});
-						
-						this.originalImage = scaledImage;
-					}
+					// 不用检查是否需要缩放了
 					
 					// 设置画布尺寸
 					this.canvas.width = width;
