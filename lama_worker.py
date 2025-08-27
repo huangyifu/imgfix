@@ -106,7 +106,7 @@ class LamaWorker:
 			output_path = os.path.join(image_dir, f"{md5}_lama.jpg")
 			
 			# 保存图片并检查文件大小
-			quality = 99
+			quality = 95
 			temp_buffer = BytesIO()
 			try:
 				while True:
@@ -125,7 +125,7 @@ class LamaWorker:
 						break
 					
 					# 否则降低质量继续尝试
-					quality -= 3
+					quality -= 4
 					print(f"[DEBUG] 文件过大 ({file_size/1024:.1f}KB)，降低质量到：{quality}")
 			finally:
 				temp_buffer.close()

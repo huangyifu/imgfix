@@ -693,9 +693,9 @@
 			<button id="uploadImageLamaBtn" class="lama-btn">一键擦除</button>
 			<div class="brush-controls">
 				<div class="edit-mode-controls">
-					<button class="mode-btn active" data-mode="add">涂抹模式</button>
-					<button class="mode-btn" data-mode="erase">擦除模式</button>
-					<button class="mode-btn" data-mode="move">移动模式</button>
+					<button class="mode-btn active" data-mode="add">绘制蒙版</button>
+					<button class="mode-btn" data-mode="erase">消除蒙版</button>
+					<button class="mode-btn" data-mode="move">移动图片</button>
 				</div>
 				<label>画笔: <span id="brushSize">10</span>px</label>
 				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
@@ -1631,13 +1631,14 @@
 				
 				const timeStr = new Date(task.create_time * 1000).toLocaleString();
 				
+				const deleteDisabled = (task.status === 'pending' || task.status === 'processing') ? 'disabled title="处理中不可删除"' : '';
 				return `
 					<div class="task-item">
 						<div class="task-info">
 							<div class="task-header">
 								<span class="task-status ${task.status}" onclick="window.editor.loadTask('${md5}')">${statusText} ${task.progress}%</span>
 								<span class="task-time" onclick="window.editor.loadTask('${md5}')">${timeStr}</span>
-								<button class="delete-btn" onclick="deleteTask('${md5}')">删除</button>
+								<button class="delete-btn" onclick="deleteTask('${md5}')" ${deleteDisabled}>删除</button>
 								${task.status === 'completed' ? `<button class="relama-btn" onclick="reLama('${md5}')">再擦一次</button>` : ''}
 							</div>
 						</div>
@@ -1650,7 +1651,10 @@
 				`;
 			}).join('');
 			
-			taskList.innerHTML = taskItems || '<div class="no-tasks">暂无任务</div>';
+    taskList.innerHTML = taskItems || '<div class="no-tasks">暂无任务</div>';
+
+    // 记录当前页是否有处理中任务，供常驻计时器判断
+    hasProcessingOnPage = Object.values(tasks).some(t => t.status === 'pending' || t.status === 'processing');
 			
 			// 更新分页
 			updatePagination(data);
@@ -1730,6 +1734,26 @@
 			console.error('初始化任务列表失败:', error);
 			showToast('获取任务列表失败: ' + error.message);
 		});
+
+        // 永远运行的计时器：每30秒，如果当前页有处理中任务则查询一次
+        const TASK_POLL_INTERVAL = 30000;
+        let taskPollInFlight = false;
+        let hasProcessingOnPage = false; // 由 updateTaskList 维护
+        setInterval(async () => {
+            if (!hasProcessingOnPage) return; // 没有进行中任务，跳过本次
+            if (taskPollInFlight) return; // 避免并发请求
+            taskPollInFlight = true;
+            try {
+                const data = await getTaskStatus(currentPage); // 仅查询当前页
+                updateTaskList(data);
+            } catch (e) {
+                console.error('自动刷新任务失败:', e);
+            } finally {
+                taskPollInFlight = false;
+            }
+        }, TASK_POLL_INTERVAL);
+
+        // 计时器已常驻，第一次是否请求由 hasProcessingOnPage 决定
 
 		// 初始化ImageMaskEditor
 		window.addEventListener('load', () => {

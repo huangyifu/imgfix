@@ -128,6 +128,13 @@ class TaskQueue:
 					'status': 'error',
 					'message': '任务不存在'
 				}
+
+			# 禁止删除正在处理中的任务
+			if self.tasks.get(md5, {}).get('status') == 'processing':
+				return {
+					'status': 'error',
+					'message': '任务正在处理中，暂不可删除'
+				}
 			
 			# 删除任务数据
 			del self.tasks[md5]
