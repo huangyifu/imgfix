@@ -1,0 +1,110 @@
+<view class="password-modal" wx:if="{{showPasswordModal}}">
+  <view class="password-modal-content">
+    <view class="password-title">请输入密码</view>
+    <input class="password-input" type="password" bindinput="handlePasswordInput"/>
+    <button class="password-submit" bindtap="submitPassword">确定</button>
+  </view>
+</view>
+<view class="container" wx:if="{{!showPasswordModal}}">
+  <view class="password-modal" wx:if="{{showPasswordModal}}">
+    <view class="password-modal-content">
+      <view class="password-title">请输入密码</view>
+      <input class="password-input" type="password" bindinput="handlePasswordInput"/>
+      <button class="password-submit" bindtap="submitPassword">确定</button>
+    </view>
+  </view>
+  <view class="controls">
+    <view class="file-input-container">
+      <button bindtap="chooseImage" class="file-input-label">选择图片</button>
+      <view class="file-info">{{fileInfo}}</view>
+    </view>
+    <button bindtap="uploadImageLama" class="lama-btn">一键擦除</button>
+    <view class="brush-controls">
+      <view class="edit-mode-controls">
+        <button class="{{editMode === 'add' ? 'active' : ''}} mode-btn" data-mode="add" bindtap="changeEditMode">绘制蒙版</button>
+        <button class="{{editMode === 'erase' ? 'active' : ''}} mode-btn" data-mode="erase" bindtap="changeEditMode">消除蒙版</button>
+        <button class="{{editMode === 'move' ? 'active' : ''}} mode-btn" data-mode="move" bindtap="changeEditMode">移动图片</button>
+      </view>
+      <label>画笔: {{brushSize}}px</label>
+      <slider min="1" max="500" value="{{brushSize}}" bindchange="onBrushSizeChange" style="width: 200px;"/>
+    </view>
+    <view class="all-controls">
+      <button bindtap="zoomIn">放大</button>
+      <button bindtap="zoomOut">缩小</button>
+      <button bindtap="resetZoom">[1:1]</button>
+      <button bindtap="fitScreen">全图</button>
+      <button bindtap="undo">撤销编辑</button>
+      <button bindtap="clearMask">清空蒙版</button>
+    </view>
+  </view>
+
+  <view class="task-panel {{isTaskPanelCollapsed ? 'collapsed' : ''}}" id="taskPanel">
+    <view class="task-header" id="taskHeader" bindtap="toggleTaskPanel">
+      <view class="task-header-left">
+        <text>任务列表</text>
+        <text class="task-count">{{taskCount}}</text>
+      </view>
+      <button id="refreshTasksBtn" class="refresh-btn" catchtap="refreshTaskList">
+        <image src="/images/refresh.svg" class="{{isRefreshing ? 'spinning' : ''}}"/>
+      </button>
+    </view>
+    <view class="task-list" id="taskList">
+      <block wx:for="{{tasks}}" wx:key="md5">
+        <view class="task-item">
+          <view class="task-info">
+            <view class="task-header">
+              <text class="task-status {{item.status}}" bindtap="loadTask" data-md5="{{item.md5}}">{{item.statusText}} {{item.progress}}%</text>
+              <text class="task-time" bindtap="loadTask" data-md5="{{item.md5}}">{{item.create_time}}</text>
+              <button class="delete-btn" bindtap="deleteTask" data-md5="{{item.md5}}" disabled="{{item.status === 'pending' || item.status === 'processing'}}">删除</button>
+              <button class="relama-btn" wx:if="{{item.status === 'completed'}}" bindtap="reLama" data-md5="{{item.md5}}">再擦一次</button>
+            </view>
+          </view>
+          <view class="task-images">
+            <image src="{{'http://127.0.0.1:8080/image/' + item.md5 + '_thumb.jpg'}}" class="task-result" bindtap="previewImage" data-url="{{'http://127.0.0.1:8080/image/' + item.md5 + '.jpg'}}" data-is-lama="false" title="原始图片"/>
+            <text class="arrow" wx:if="{{item.status === 'completed'}}">→</text>
+            <image wx:if="{{item.status === 'completed'}}" src="{{'http://127.0.0.1:8080/image/' + item.md5 + '_lama_thumb.jpg'}}" class="task-result" bindtap="previewImage" data-url="{{'http://127.0.0.1:8080/image/' + item.md5 + '_lama.jpg'}}" data-is-lama="true" title="处理后图片"/>
+          </view>
+        </view>
+      </block>
+    </view>
+    <view class="task-pagination" id="taskPagination">
+      <button class="page-btn" disabled="{{currentPage === 1}}" bindtap="changePage" data-page="{{currentPage - 1}}">上一页</button>
+      <block wx:for="{{pageNumbers}}" wx:key="item">
+        <button class="page-btn {{item === currentPage ? 'active' : ''}}" bindtap="changePage" data-page="{{item}}" wx:if="{{item !== '...'}}">{{item}}</button>
+        <text class="page-info" wx:if="{{item === '...'}}">...</text>
+      </block>
+      <button class="page-btn" disabled="{{currentPage === totalPages}}" bindtap="changePage" data-page="{{currentPage + 1}}">下一页</button>
+      <text class="page-info">第{{currentPage}}/{{totalPages}}页</text>
+    </view>
+  </view>
+
+  <view class="canvas-container">
+    <canvas canvas-id="imageCanvas" id="imageCanvas" style="width: {{canvasWidth}}px; height: {{canvasHeight}}px;"
+      bindtouchstart="onTouchStart"
+      bindtouchmove="onTouchMove"
+      bindtouchend="onTouchEnd"
+      catchtouchmove="true"
+    ></canvas>
+  </view>
+
+  <view class="toast" hidden="{{!toast.show}}">{{toast.message}}</view>
+
+  <view class="image-preview-modal" hidden="{{!isPreviewing}}">
+    <view class="close-preview" bindtap="closePreview">×</view>
+    <view class="preview-loading" hidden="{{!isPreviewLoading}}">加载中...</view>
+    <swiper class="preview-container" current="{{previewCurrent}}" bindchange="onPreviewChange">
+      <swiper-item>
+        <view class="preview-item">
+          <view class="preview-label">原图</view>
+          <image class="preview-image" src="{{previewImageOriginal}}" mode="aspectFit"/>
+        </view>
+      </swiper-item>
+      <swiper-item>
+        <view class="preview-item">
+          <view class="preview-label">处理后</view>
+          <image class="preview-image" src="{{previewImageLama}}" mode="aspectFit"/>
+        </view>
+      </swiper-item>
+    </swiper>
+  </view>
+</view>

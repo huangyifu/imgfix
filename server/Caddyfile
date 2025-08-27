@@ -1,0 +1,77 @@
+img.flmja.com:443  {
+    # API 反向代理
+    handle /upload {
+        reverse_proxy localhost:8080
+    }
+
+    handle /lama {
+        reverse_proxy localhost:8080
+    }
+
+    handle /relama {
+        reverse_proxy localhost:8080
+    }
+
+    handle /tasks {
+        reverse_proxy localhost:8080
+    }
+    handle /delete_task {
+        reverse_proxy localhost:8080
+    }
+
+    # 默认文档处理
+    handle {
+        root * .
+        try_files {path} /index.html
+        file_server
+    }
+
+    # 静态文件服务
+    @static_files {
+        path *.html *.css *.js
+    }
+    handle @static_files {
+        root * .
+        file_server
+    }
+
+    @images {
+        path *.jpg *.png *.gif
+    }
+    handle @images {
+        root * .
+        file_server
+    }
+
+    # 安全响应头
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "geolocation=(), midi=(), camera=(), usb=(), magnetometer=(), accelerometer=(), gyroscope=(), payment=()"
+        
+        # CORS 设置
+        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Methods "GET, POST, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type"
+        Access-Control-Max-Age "3600"
+        
+        # 删除一些敏感header
+        -Server
+        -X-Powered-By
+    }
+
+    # 日志格式
+    log {
+        output file ./logs/site.log {
+            roll_size 10MB
+            roll_keep 10
+        }
+        format json
+    }
+
+    # 自动压缩静态资源 (仅限非图片)
+    encode @static_files gzip zstd
+}

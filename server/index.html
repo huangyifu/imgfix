@@ -1,0 +1,2162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+	<title>Pure Story 图片擦除工具</title>
+	<script src="spark-md5.min.js"></script>
+	<style>
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		body {
+			font-family: Arial, sans-serif;
+			background-color: #f0f0f0;
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+		}
+
+		.container {
+			max-width: 100%;
+			margin: 0 auto;
+			padding: 0 15px;
+			height: 100vh;
+			display: flex;
+			flex-direction: column;
+		}
+
+		.controls {
+			background: white;
+			padding: 10px;
+			border-radius: 8px;
+			margin-bottom: 10px;
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+			flex-shrink: 0;
+		}
+
+		/* 添加文件输入框样式 */
+		.file-input-container {
+			display: inline-flex;
+			align-items: center;
+			gap: 10px;
+		}
+
+		.file-input-container input[type="file"] {
+			display: none;
+		}
+
+		.file-input-label {
+			padding: 4px 8px;
+			background-color: #4CAF50;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+			font-size: 12px;
+			min-width: 40px;
+		}
+
+		.file-input-label:hover {
+			background-color: #45a049;
+		}
+
+		.file-info {
+			font-size: 12px;
+			color: #666;
+		}
+
+		.brush-controls {
+			margin-top: 15px;
+			display: flex;
+			align-items: center;
+			gap: 15px;
+			flex-wrap: wrap;
+		}
+
+		.edit-mode-controls {
+			display: flex;
+			gap: 5px;
+			margin-right: 15px;
+		}
+
+		.mode-btn {
+			padding: 4px 8px;
+			border: 1px solid #ccc;
+			background: #f5f5f5;
+			color: darkgray;
+			cursor: pointer;
+			border-radius: 4px;
+		}
+
+		.mode-btn.active {
+			background: #4CAF50;
+			color: white;
+			border-color: #4CAF50;
+		}
+
+		.canvas-container {
+			position: relative;
+			overflow: auto;
+			background: #fff;
+			border-radius: 8px;
+			box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+			margin-bottom: 10px;
+			flex: 1;
+			min-height: 0;
+		}
+
+		canvas {
+			display: block;
+			margin: 0 auto;
+			touch-action: none;
+		}
+
+		button {
+			padding: 4px 8px;
+			background-color: #4CAF50;
+			color: white;
+			border: none;
+			border-radius: 4px;
+			cursor: pointer;
+			font-size: 12px;
+			min-width: 40px;
+		}
+
+		button:hover {
+			background-color: #45a049;
+		}
+
+		input[type="range"] {
+			width: 200px;
+		}
+
+		.zoom-controls {
+			display: flex;
+			gap: 10px;
+			margin-top: 10px;
+		}
+
+		.direction-controls {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 10px;
+			margin-top: 15px;
+		}
+
+		.horizontal-controls {
+			display: flex;
+			gap: 10px;
+			width: 100%;
+		}
+
+		.horizontal-controls button {
+			flex: 1;
+		}
+
+		.all-controls {
+			display: flex;
+			gap: 5px;
+			margin-top: 10px;
+			flex-wrap: nowrap;
+			justify-content: center;
+		}
+
+		.all-controls button {
+			flex: 0 1 auto;
+			white-space: nowrap;
+			margin: 0 5px;
+		}
+
+		@media (max-width: 768px) {
+			.container {
+				margin: 5px auto;
+				padding: 0 5px;
+			}
+
+			.controls {
+				padding: 5px;
+				margin-bottom: 5px;
+			}
+
+			.brush-controls {
+				flex-direction: row;
+				align-items: center;
+				gap: 5px;
+				margin-top: 5px;
+			}
+
+			input[type="range"] {
+				width: 100px;
+			}
+
+			button {
+				width: auto;
+				font-size: 12px;
+				padding: 4px;
+			}
+
+			.all-controls {
+				flex-direction: row;
+				gap: 3px;
+			}
+
+			.all-controls button {
+				padding: 4px 2px;
+				min-width: 30px;
+			}
+		}
+
+		.toast {
+			position: fixed;
+			top: 20px;
+			left: 50%;
+			transform: translateX(-50%);
+			background-color: rgba(0, 0, 0, 0.8);
+			color: white;
+			padding: 10px 20px;
+			border-radius: 4px;
+			z-index: 1000;
+			display: none;
+			animation: fadeInOut 3s ease-in-out;
+		}
+
+		@keyframes fadeInOut {
+			0% {
+				opacity: 0;
+			}
+
+			10% {
+				opacity: 1;
+			}
+
+			90% {
+				opacity: 1;
+			}
+
+			100% {
+				opacity: 0;
+			}
+		}
+
+		/* 添加任务列表样式 */
+		.task-panel {
+			background: white;
+			padding: 5px;
+			border-radius: 8px;
+			margin: 5px 0;
+			box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+			transition: all 0.3s ease;
+		}
+		
+		.task-panel.collapsed {
+			padding: 0;
+		}
+		
+		.task-panel.collapsed .task-list,
+		.task-panel.collapsed .task-pagination {
+			display: none;
+		}
+		
+		.task-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 10px;
+			border-bottom: 1px solid #eee;
+			cursor: pointer;
+		}
+		
+		.task-panel.collapsed .task-header {
+			border-bottom: none;
+			margin-bottom: 0;
+			padding-bottom: 5px;
+		}
+		
+		.task-header:hover {
+			background-color: #f5f5f5;
+		}
+		
+		.task-header-left {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		
+		.task-header h3 {
+			margin: 0;
+			font-size: 16px;
+			display: flex;
+			align-items: center;
+			gap: 5px;
+		}
+		
+		.task-header h3::after {
+			content: "▼";
+			font-size: 12px;
+			transition: transform 0.3s ease;
+		}
+		
+		.task-panel.collapsed .task-header h3::after {
+			transform: rotate(-90deg);
+		}
+		
+		.task-count {
+			background: #4CAF50;
+			color: white;
+			padding: 2px 8px;
+			border-radius: 12px;
+			font-size: 12px;
+		}
+		
+		.task-list {
+			max-height: none;
+			overflow-y: visible;
+		}
+		
+		.task-item {
+			display: flex;
+			align-items: center;
+			padding: 2px 5px;
+		}
+		
+		.task-item:last-child {
+			border-bottom: none;
+		}
+		
+		.task-info {
+			flex: 1;
+		}
+		
+		.task-status {
+			font-size: 12px;
+			padding: 1px 4px;
+			border-radius: 3px;
+			color: white;
+		}
+		
+		.task-status.pending {
+			background: #FFA000;
+		}
+		
+		.task-status.processing {
+			background: #2196F3;
+		}
+		
+		.task-status.completed {
+			background: #4CAF50;
+		}
+		
+		.task-status.error {
+			background: #F44336;
+		}
+		
+		.task-result {
+			width: 30px;
+			height: 30px;
+			object-fit: cover;
+			border-radius: 4px;
+			cursor: pointer;
+			transition: transform 0.3s ease;
+		}
+		
+		.task-result:hover {
+			transform: scale(1.1);
+		}
+
+		/* 添加任务图片容器样式 */
+		.task-images {
+			display: flex;
+			align-items: center;
+			gap: 3px;
+			margin: 0;
+		}
+
+		.task-images .arrow {
+			color: #4CAF50;
+			font-size: 16px;
+			font-weight: bold;
+			margin: 0;
+		}
+
+		/* 添加刷新按钮样式 */
+		.refresh-btn {
+			background: none;
+			border: none;
+			padding: 5px;
+			cursor: pointer;
+			color: #666;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			border-radius: 50%;
+			min-width: auto;
+			transition: all 0.3s ease;
+		}
+		
+		.refresh-btn:hover {
+			background: #f0f0f0;
+			color: #4CAF50;
+		}
+		
+		.refresh-btn.spinning svg {
+			animation: spin 1s linear infinite;
+		}
+		
+		@keyframes spin {
+			from {
+				transform: rotate(0deg);
+			}
+			to {
+				transform: rotate(360deg);
+			}
+		}
+
+		/* 添加分页样式 */
+		.task-pagination {
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			gap: 5px;
+			margin-top: 10px;
+			padding-top: 10px;
+			border-top: 1px solid #eee;
+		}
+		
+		.page-btn {
+			padding: 4px 8px;
+			background: #f5f5f5;
+			border: 1px solid #ddd;
+			border-radius: 4px;
+			cursor: pointer;
+			color: #666;
+			min-width: 30px;
+			text-align: center;
+			font-size: 12px;
+		}
+		
+		.page-btn:hover {
+			background: #e0e0e0;
+		}
+		
+		.page-btn.active {
+			background: #4CAF50;
+			color: white;
+			border-color: #4CAF50;
+		}
+		
+		.page-btn:disabled {
+			background: #f5f5f5;
+			color: #ccc;
+			cursor: not-allowed;
+		}
+		
+		.page-info {
+			font-size: 12px;
+			color: #666;
+		}
+
+		/* 添加删除按钮样式 */
+		.delete-btn {
+			background: #ff4444;
+			color: white;
+			border: none;
+			border-radius: 3px;
+			padding: 1px 4px;
+			font-size: 12px;
+			cursor: pointer;
+			margin-left: 6px;
+			transition: background-color 0.3s;
+		}
+		
+		.delete-btn:hover {
+			background: #cc0000;
+		}
+		
+		.task-header {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+		}
+		
+		.task-time {
+			color: #666;
+			font-size: 12px;
+		}
+
+		/* 添加 Lama 擦除按钮样式 */
+		.lama-btn {
+			background-color: #2196F3 !important;
+			font-weight: bold;
+			padding: 6px 12px !important;
+		}
+		
+		.lama-btn:hover {
+			background-color: #1976D2 !important;
+		}
+
+		/* 添加再次Lama按钮样式 */
+		.relama-btn {
+			background: #2196F3;
+			color: white;
+			border: none;
+			border-radius: 3px;
+			padding: 1px 4px;
+			font-size: 12px;
+			cursor: pointer;
+			margin-left: 6px;
+			transition: background-color 0.3s;
+		}
+
+		.relama-btn:hover {
+			background: #1976D2;
+		}
+
+		.relama-btn:disabled {
+			background: #ccc;
+			cursor: not-allowed;
+		}
+
+		/* 添加鼠标样式 */
+		.canvas-container.mode-add {
+			cursor: crosshair;
+		}
+
+		.canvas-container.mode-erase {
+			cursor: crosshair;
+		}
+
+		.canvas-container.mode-move {
+			cursor: move;
+		}
+
+		/* 修改图片预览模态框样式 */
+		.image-preview-modal {
+			display: none;
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0, 0, 0, 0.9);
+			z-index: 1000;
+			overflow: hidden;
+			touch-action: none;
+		}
+
+		.preview-container {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 200%;  /* 容纳两张图片 */
+			height: 100%;
+			display: flex;
+			transition: transform 0.3s ease;
+		}
+
+		.preview-item {
+			width: 50%;  /* 每个预览项占一半宽度 */
+			height: 100%;
+			position: relative;
+			flex-shrink: 0;
+		}
+
+		.preview-image {
+			max-width: 100%;
+			max-height: 100%;
+			margin: auto;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			-webkit-user-select: none;
+			user-select: none;
+		}
+
+		.preview-label {
+			position: absolute;
+			top: 10px;
+			left: 50%;
+			transform: translateX(-50%);
+			color: white;
+			background: rgba(0, 0, 0, 0.5);
+			padding: 5px 10px;
+			border-radius: 15px;
+			font-size: 14px;
+		}
+
+		.close-preview {
+			position: fixed;
+			top: 15px;
+			right: 15px;
+			color: #fff;
+			font-size: 30px;
+			cursor: pointer;
+			width: 40px;
+			height: 40px;
+			line-height: 40px;
+			text-align: center;
+			background: rgba(0, 0, 0, 0.5);
+			border-radius: 50%;
+			z-index: 1001;
+		}
+
+		.preview-loading {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+			color: #fff;
+			font-size: 16px;
+			z-index: 1001;
+		}
+
+		.preview-dots {
+			position: fixed;
+			bottom: 20px;
+			left: 50%;
+			transform: translateX(-50%);
+			display: flex;
+			gap: 10px;
+			z-index: 1001;
+		}
+
+		.preview-dot {
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: rgba(255, 255, 255, 0.5);
+			cursor: pointer;
+		}
+
+		.preview-dot.active {
+			background: white;
+		}
+
+		/* 添加预览箭头样式 */
+		.preview-arrow {
+			position: fixed;
+			top: 50%;
+			transform: translateY(-50%);
+			width: 40px;
+			height: 40px;
+			background: rgba(0, 0, 0, 0.5);
+			border-radius: 50%;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			cursor: pointer;
+			color: white;
+			font-size: 24px;
+			z-index: 1001;
+			transition: all 0.3s ease;
+			user-select: none;
+		}
+
+		.preview-arrow:hover {
+			background: rgba(0, 0, 0, 0.8);
+		}
+
+		.preview-arrow.disabled {
+			opacity: 0.3;
+			cursor: not-allowed;
+		}
+
+		.preview-arrow-left {
+			left: 15px;
+		}
+
+		.preview-arrow-right {
+			right: 15px;
+		}
+
+		/* 修改关闭按钮样式,避免与箭头冲突 */
+		.close-preview {
+			top: 15px;
+			right: 15px;
+		}
+
+	</style>
+</head>
+
+<body>
+	<div class="container" style="display: none;">
+		<div class="controls">
+			<div class="file-input-container">
+				<input type="file" id="imageInput" accept="image/*">
+				<label for="imageInput" class="file-input-label">选择图片</label>
+			</div>
+			<input type="hidden" id="pwd">
+			<button id="uploadImageLamaBtn" class="lama-btn">一键擦除</button>
+			<div class="brush-controls">
+				<div class="edit-mode-controls">
+					<button class="mode-btn active" data-mode="add">绘制蒙版</button>
+					<button class="mode-btn" data-mode="erase">消除蒙版</button>
+					<button class="mode-btn" data-mode="move">移动图片</button>
+				</div>
+				<label>画笔: <span id="brushSize">10</span>px</label>
+				<input type="range" id="brushSizeInput" min="1" max="500" value="10">
+			</div>
+			<div class="all-controls">
+				<button id="zoomIn">放大</button>
+				<button id="zoomOut">缩小</button>
+				<button id="resetZoom">[1:1]</button>
+				<button id="fitScreen">全图</button>
+				<button id="undoBtn">撤销编辑</button>
+				<button id="clearBtn">清空蒙版</button>
+			</div>
+		</div>
+		
+		<!-- 添加任务列表显示区域 -->
+		<div class="task-panel" id="taskPanel">
+			<div class="task-header" id="taskHeader">
+				<div class="task-header-left">
+					<h3>任务列表</h3>
+					<span class="task-count" id="taskCount"></span>
+				</div>
+				<button id="refreshTasksBtn" class="refresh-btn" title="刷新任务列表">
+					<svg viewBox="0 0 24 24" width="16" height="16">
+						<path fill="currentColor" d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+					</svg>
+				</button>
+			</div>
+			<div class="task-list" id="taskList">
+				<!-- 任务列表将在这里动态生成 -->
+			</div>
+			<div class="task-pagination" id="taskPagination">
+				<!-- 分页控件将在这里动态生成 -->
+			</div>
+		</div>
+		<div class="canvas-container">
+			<canvas id="imageCanvas"></canvas>
+		</div>
+	</div>
+	<div class="toast" id="toast">
+		<!-- Toast content will be dynamically added here -->
+	</div>
+
+	<!-- 修改图片预览模态框结构 -->
+	<div class="image-preview-modal" id="imagePreviewModal">
+		<div class="close-preview" id="closePreview">×</div>
+		<div class="preview-loading" id="previewLoading">加载中...</div>
+		<div class="preview-container" id="previewContainer">
+			<div class="preview-item">
+				<div class="preview-label">原图</div>
+				<img class="preview-image" id="previewImageOriginal">
+			</div>
+			<div class="preview-item">
+				<div class="preview-label">处理后</div>
+				<img class="preview-image" id="previewImageLama">
+			</div>
+		</div>
+		<div class="preview-arrow preview-arrow-left" id="previewArrowLeft">❮</div>
+		<div class="preview-arrow preview-arrow-right" id="previewArrowRight">❯</div>
+		<div class="preview-dots">
+			<div class="preview-dot active" data-index="0"></div>
+			<div class="preview-dot" data-index="1"></div>
+		</div>
+	</div>
+
+	<script>
+		function promptForPassword() {
+			const password = prompt('请输入密码:', '');
+			if (password) {
+				document.getElementById('pwd').value = password;
+				refreshTaskList();
+			} else {
+                // If user cancels the prompt, re-prompt
+                promptForPassword();
+            }
+		}
+
+		
+		function getToken() {
+			const pwd = document.getElementById('pwd').value;
+			const now = new Date();
+			const year = now.getFullYear();
+			const month = (now.getMonth() + 1).toString().padStart(2, '0');
+			const day = now.getDate().toString().padStart(2, '0');
+			const hours = now.getHours().toString().padStart(2, '0');
+			const minutes = now.getMinutes().toString().padStart(2, '0');
+			const timeStr = `${year}-${month}-${day} ${hours}:${minutes}`;
+			return SparkMD5.hash(timeStr + pwd);
+		}
+
+		class ImageMaskEditor {
+			constructor() {
+				this.canvas = document.getElementById('imageCanvas');
+				// 添加兼容性检查
+				try {
+					this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
+				} catch (e) {
+					this.ctx = this.canvas.getContext('2d');
+				}
+				// 创建遮罩画布
+				this.maskCanvas = document.createElement('canvas');
+				try {
+					this.maskCtx = this.maskCanvas.getContext('2d', { willReadFrequently: true });
+				} catch (e) {
+					this.maskCtx = this.maskCanvas.getContext('2d');
+				}
+				this.isDrawing = false;
+				this.isPanning = false;  // 是否正在平移
+				this.lastTouchDistance = 0;  // 用于双指缩放
+				this.scale = 1;
+				this.offsetX = 0;
+				this.offsetY = 0;
+				this.lastX = 0;
+				this.lastY = 0;
+				this.brushSize = 10;
+				this.originalImage = null;
+				this.touchStartTime = 0;  // 用于区分点击和拖动
+				this.imageMD5 = null;  // 存储原图的MD5值
+				this.isMaskModified = false;  // 新增：标记遮罩是否被修改
+				this.isMultiTouch = false;  // 新增：标记是否在多点触控状态
+				// 添加历史记录数组
+				this.history = [];
+				this.maxHistoryLength = 50; // 最大历史记录数
+				// 新增：标记原图是否已上传
+				this.isImageUploaded = false;
+				this.editMode = 'add'; // 默认为添加遮罩模式
+				this.isTouchDevice = false;  // 新增：标记是否为触摸设备
+				this.lastTouchCenter = null;  // 新增：记录上一次双指中心点
+
+				this.setupEventListeners();
+				this.setupModeControls();
+			}
+
+			setupEventListeners() {
+				// 文件输入处理
+				document.getElementById('imageInput').addEventListener('change', (e) => {
+					// 创建或获取文件信息显示元素
+					let fileInfo = document.querySelector('.file-info');
+					if (!fileInfo) {
+						fileInfo = document.createElement('span');
+						fileInfo.className = 'file-info';
+						document.querySelector('.file-input-container').appendChild(fileInfo);
+					}
+
+					const file = e.target.files[0];
+					if (!file) {
+						fileInfo.textContent = '';
+						return;
+					}
+
+					this.loadImage(e);
+				});
+
+				// 画笔大小控制
+				document.getElementById('brushSizeInput').addEventListener('input', (e) => {
+					this.brushSize = parseInt(e.target.value);
+					document.getElementById('brushSize').textContent = this.brushSize;
+					this.showBrushPreview(e);
+				});
+
+				// 添加鼠标移动时的画笔预览
+				this.canvas.addEventListener('mousemove', (e) => {
+					if (!this.isDrawing) {
+						this.showBrushPreview(e);
+					}
+				});
+
+				// 鼠标离开时清除预览
+				this.canvas.addEventListener('mouseout', () => {
+					this.redrawCanvas();
+				});
+
+				// 修改绘画事件
+				this.canvas.addEventListener('pointerdown', (e) => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.startDrawing(e);
+				});
+				
+				this.canvas.addEventListener('pointermove', (e) => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.draw(e);
+				});
+				
+				this.canvas.addEventListener('pointerup', () => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.stopDrawing();
+				});
+				
+				this.canvas.addEventListener('pointerout', () => {
+					// 如果是触摸设备且检测到多点触控,则不处理指针事件
+					if (this.isTouchDevice && this.isMultiTouch) return;
+					this.stopDrawing();
+				});
+
+				// 缩放控制
+				document.getElementById('zoomIn').addEventListener('click', () => this.zoom(1.2));
+				document.getElementById('zoomOut').addEventListener('click', () => this.zoom(0.8));
+				document.getElementById('resetZoom').addEventListener('click', () => this.resetZoom());
+				document.getElementById('fitScreen').addEventListener('click', () => this.fitScreen());
+
+				// 上传按钮事件
+				const uploadImageLamaBtn = document.getElementById('uploadImageLamaBtn');
+				if (uploadImageLamaBtn) {
+					uploadImageLamaBtn.addEventListener('click', () => this.uploadLama());
+				}
+
+				// 添加撤销按钮事件
+				document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+
+				// 添加清除按钮事件
+				document.getElementById('clearBtn').addEventListener('click', () => this.clearMask());
+
+				// 修改触摸事件处理
+				this.canvas.addEventListener('touchstart', (e) => {
+					// 标记为触摸设备
+					this.isTouchDevice = true;
+					
+					if (e.touches.length === 2) {
+						// 设置多点触控标记
+						this.isMultiTouch = true;
+						// 停止绘制状态
+						this.isDrawing = false;
+						// 阻止默认行为以防止页面缩放
+						e.preventDefault();
+						
+						// 计算两个触摸点之间的初始距离
+						this.lastTouchDistance = Math.hypot(
+							e.touches[0].clientX - e.touches[1].clientX,
+							e.touches[0].clientY - e.touches[1].clientY
+						);
+						
+						// 记录初始触摸中心点
+						this.lastTouchCenter = {
+							x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+							y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+						};
+					} else if (!this.isMultiTouch) {
+						// 只有在非多点触控状态下才允许开始绘制或移动
+						const pos = this.getMousePos(e.touches[0]);
+						this.lastX = this.editMode === 'move' ? e.touches[0].clientX : pos.x;
+						this.lastY = this.editMode === 'move' ? e.touches[0].clientY : pos.y;
+						
+						if (this.editMode === 'move') {
+							this.isPanning = true;
+						} else {
+							this.isDrawing = true;
+							this.saveToHistory();
+						}
+					}
+				}, { passive: false });
+
+				this.canvas.addEventListener('touchmove', (e) => {
+					if (e.touches.length === 2 && this.isMultiTouch) {
+						// 阻止默认行为以防止页面缩放
+						e.preventDefault();
+						
+						// 计算新的触摸点距离和中心点
+						const newDistance = Math.hypot(
+							e.touches[0].clientX - e.touches[1].clientX,
+							e.touches[0].clientY - e.touches[1].clientY
+						);
+						
+						const newCenter = {
+							x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+							y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+						};
+						
+						if (this.lastTouchDistance && this.lastTouchCenter) {
+							// 计算缩放比例
+							const scale = newDistance / this.lastTouchDistance;
+							
+							// 计算平移距离
+							const deltaX = newCenter.x - this.lastTouchCenter.x;
+							const deltaY = newCenter.y - this.lastTouchCenter.y;
+							
+							// 应用缩放和平移
+							this.zoomAndPan(scale, deltaX, deltaY, newCenter.x - this.canvas.getBoundingClientRect().left, newCenter.y - this.canvas.getBoundingClientRect().top);
+						}
+						
+						this.lastTouchDistance = newDistance;
+						this.lastTouchCenter = newCenter;
+					} else if (!this.isMultiTouch) {
+						if (this.editMode === 'move' && this.isPanning) {
+							// 处理移动模式下的平移
+							const deltaX = e.touches[0].clientX - this.lastX;
+							const deltaY = e.touches[0].clientY - this.lastY;
+							this.offsetX += deltaX;
+							this.offsetY += deltaY;
+							this.lastX = e.touches[0].clientX;
+							this.lastY = e.touches[0].clientY;
+							this.redrawCanvas();
+						} else if (this.isDrawing) {
+							// 处理绘制模式
+							const pos = this.getMousePos(e.touches[0]);
+							this.draw(e.touches[0]);
+						}
+					}
+				}, { passive: false });
+
+				this.canvas.addEventListener('touchend', (e) => {
+					if (e.touches.length === 0) {
+						// 当所有手指都离开时，重置多点触控状态
+						this.isMultiTouch = false;
+						this.lastTouchDistance = null;
+						this.lastTouchCenter = null;
+						this.isDrawing = false;
+					}
+				});
+			}
+
+			setupModeControls() {
+				const modeButtons = document.querySelectorAll('.mode-btn');
+				modeButtons.forEach(btn => {
+					btn.addEventListener('click', () => {
+						// 移除所有按钮的active类
+						modeButtons.forEach(b => b.classList.remove('active'));
+						// 添加当前按钮的active类
+						btn.classList.add('active');
+						// 设置编辑模式
+						this.editMode = btn.dataset.mode;
+						// 更新画布容器的类名
+						const container = this.canvas.parentElement;
+						container.className = 'canvas-container mode-' + this.editMode;
+					});
+				});
+			}
+
+			// 计算文件的MD5值
+			async calculateMD5(file) {
+				return new Promise((resolve, reject) => {
+					const reader = new FileReader();
+					reader.onload = function (e) {
+						const spark = new SparkMD5.ArrayBuffer();
+						spark.append(e.target.result);
+						resolve(spark.end());
+					};
+					reader.onerror = function (e) {
+						reject('Error calculating MD5');
+					};
+					reader.readAsArrayBuffer(file);
+				});
+			}
+
+			async loadImage(event) {
+				const file = event.target.files[0];
+				if (!file) return;
+
+				try {
+					// 计算并存储MD5值
+					this.imageMD5 = await this.calculateMD5(file);
+					// 重置遮罩修改状态
+					this.isMaskModified = false;
+
+					const reader = new FileReader();
+					reader.onload = async (e) => {
+						this.originalImage = new Image();
+						this.originalImage.onload = async () => {
+							// 获取文件信息显示元素
+							const fileInfo = document.querySelector('.file-info');
+							
+							// 添加图片尺寸限制逻辑
+							let width = this.originalImage.width;
+							let height = this.originalImage.height;
+
+							// 检查是否需要缩放
+							const MAX_SIZE = 1920;
+							let needsResize = false;
+							if (width > MAX_SIZE || height > MAX_SIZE) {
+								needsResize = true;
+								if (width > height) {
+									// 宽度为主要维度
+									height = Math.round((height * MAX_SIZE) / width);
+									width = MAX_SIZE;
+								} else {
+									// 高度为主要维度
+									width = Math.round((width * MAX_SIZE) / height);
+									height = MAX_SIZE;
+								}
+
+								// 显示分辨率信息
+								if (fileInfo) {
+									fileInfo.textContent = `${this.originalImage.width} × ${this.originalImage.height} ⇨ ${width} × ${height}`;
+									showToast(`图片尺寸过大，将自动缩放至 ${width} × ${height}`);
+								}
+
+								// 创建临时画布进行缩放
+								const tempCanvas = document.createElement('canvas');
+								tempCanvas.width = width;
+								tempCanvas.height = height;
+								const tempCtx = tempCanvas.getContext('2d');
+
+								// 使用高质量的图像缩放
+								tempCtx.imageSmoothingEnabled = true;
+								tempCtx.imageSmoothingQuality = 'high';
+								tempCtx.drawImage(this.originalImage, 0, 0, width, height);
+
+								// 创建新的Image对象存储缩放后的图片
+								const scaledImage = new Image();
+								scaledImage.src = tempCanvas.toDataURL('image/png');
+
+								await new Promise(resolve => {
+									scaledImage.onload = resolve;
+								});
+
+								this.originalImage = scaledImage;
+							} else if (fileInfo) {
+								// 如果不需要缩放，只显示原始尺寸
+								fileInfo.textContent = `${width} × ${height}`;
+							}
+
+							// 设置画布尺寸
+							this.canvas.width = width;
+							this.canvas.height = height;
+							// 设置遮罩画布尺寸
+							this.maskCanvas.width = width;
+							this.maskCanvas.height = height;
+
+							// 尝试从服务器加载遮罩
+							try {
+								const maskResponse = await fetch(`image/${this.imageMD5}_mask.png?token=` + getToken());
+								if (maskResponse.ok) {
+									// 如果遮罩存在，加载它
+									const maskBlob = await maskResponse.blob();
+									const maskUrl = URL.createObjectURL(maskBlob);
+									const maskImage = new Image();
+									maskImage.onload = () => {
+										this.maskCtx.drawImage(maskImage, 0, 0, width, height);
+										URL.revokeObjectURL(maskUrl);
+										this.redrawCanvas();
+									};
+									maskImage.src = maskUrl;
+								} else {
+									// 如果遮罩不存在，创建新的黑色遮罩
+									this.maskCtx.fillStyle = '#000';
+									this.maskCtx.fillRect(0, 0, width, height);
+								}
+							} catch (error) {
+								console.error('加载遮罩失败:', error);
+								this.maskCtx.fillStyle = '#000';
+								this.maskCtx.fillRect(0, 0, width, height);
+							}
+
+							// 计算适应屏幕的缩放比例
+							const container = this.canvas.parentElement;
+							const containerWidth = container.clientWidth;
+							const containerHeight = container.clientHeight;
+							const scaleX = (containerWidth - 40) / width;
+							const scaleY = (containerHeight - 40) / height;
+							this.scale = Math.min(scaleX, scaleY, 1);
+
+							// 计算居中位置
+							this.offsetX = (containerWidth - width * this.scale) / 2;
+							this.offsetY = 0;
+
+							this.redrawCanvas();
+
+							// 重置图片上传状态
+							this.isImageUploaded = false;
+						};
+						this.originalImage.src = e.target.result;
+					};
+					reader.readAsDataURL(file);
+				} catch (error) {
+					showToast('加载图片出错: ' + error.message);
+				}
+			}
+
+			redrawCanvas() {
+				this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+				// 保存当前状态
+				this.ctx.save();
+
+				// 应用缩放和平移
+				this.ctx.translate(this.offsetX, this.offsetY);
+				this.ctx.scale(this.scale, this.scale);
+
+				// 绘制原始图片
+				if (this.originalImage) {
+					this.ctx.drawImage(this.originalImage, 0, 0);
+					// 叠加遮罩
+					this.ctx.globalAlpha = 0.5;
+					this.ctx.drawImage(this.maskCanvas, 0, 0);
+				}
+
+				// 恢复状态
+				this.ctx.restore();
+			}
+
+			startDrawing(e) {
+				if (this.editMode === 'move') {
+					this.isPanning = true;
+					const pos = this.getMousePos(e);
+					this.lastX = e.clientX;
+					this.lastY = e.clientY;
+					return;
+				}
+
+				// 如果是触摸事件,跳过指针事件处理
+				if (e.pointerType === 'touch') return;
+
+				this.isDrawing = true;
+				const pos = this.getMousePos(e);
+				this.lastX = pos.x;
+				this.lastY = pos.y;
+				this.saveToHistory();
+				this.drawPoint(pos.x, pos.y);
+			}
+
+			draw(e) {
+				// 如果是触摸事件,跳过指针事件处理
+				if (e.pointerType === 'touch') return;
+
+				if (this.editMode === 'move' && this.isPanning) {
+					const deltaX = e.clientX - this.lastX;
+					const deltaY = e.clientY - this.lastY;
+					this.offsetX += deltaX;
+					this.offsetY += deltaY;
+					this.lastX = e.clientX;
+					this.lastY = e.clientY;
+					this.redrawCanvas();
+					return;
+				}
+
+				if (!this.isDrawing) return;
+
+				const pos = this.getMousePos(e);
+				this.drawPoint(pos.x, pos.y);
+
+				this.maskCtx.beginPath();
+				this.maskCtx.strokeStyle = this.editMode === 'add' ? '#fff' : '#000';
+				this.maskCtx.lineWidth = (this.brushSize * 2) / this.scale;
+				this.maskCtx.lineCap = 'round';
+				this.maskCtx.moveTo(this.lastX, this.lastY);
+				this.maskCtx.lineTo(pos.x, pos.y);
+				this.maskCtx.stroke();
+
+				this.lastX = pos.x;
+				this.lastY = pos.y;
+				this.redrawCanvas();
+			}
+
+			drawPoint(x, y) {
+				if (this.editMode === 'move') return;
+				
+				this.maskCtx.fillStyle = this.editMode === 'add' ? '#fff' : '#000';
+				this.maskCtx.beginPath();
+				this.maskCtx.arc(x, y, this.brushSize / this.scale, 0, Math.PI * 2);
+				this.maskCtx.fill();
+				this.redrawCanvas();
+			}
+
+			stopDrawing() {
+				this.isDrawing = false;
+				this.isPanning = false;
+			}
+
+			getMousePos(e) {
+				const rect = this.canvas.getBoundingClientRect();
+				return {
+					x: (e.clientX - rect.left - this.offsetX) / this.scale,
+					y: (e.clientY - rect.top - this.offsetY) / this.scale
+				};
+			}
+
+			zoom(factor) {
+				const oldScale = this.scale;
+				this.scale *= factor;
+				this.scale = Math.min(Math.max(0.1, this.scale), 10);
+
+				// 调整偏移以保持鼠标位置不变
+				const canvasCenterX = this.canvas.width / 2;
+				const canvasCenterY = this.canvas.height / 2;
+
+				this.offsetX -= (canvasCenterX * (this.scale - oldScale));
+				this.offsetY -= (canvasCenterY * (this.scale - oldScale));
+
+				this.redrawCanvas();
+			}
+
+			resetZoom() {
+				this.scale = 1;
+				this.offsetX = 0;
+				this.offsetY = 0;
+				this.redrawCanvas();
+			}
+
+			// 添加适应屏幕方法
+			fitScreen() {
+				if (!this.originalImage) return;
+
+				const container = this.canvas.parentElement;
+				const containerWidth = container.clientWidth;
+				const containerHeight = container.clientHeight;
+				const imageWidth = this.canvas.width;
+				const imageHeight = this.canvas.height;
+
+				// 计算适应屏幕的缩放比例
+				const scaleX = (containerWidth - 1) / imageWidth;
+				const scaleY = (containerHeight - 1) / imageHeight;
+				this.scale = Math.min(scaleX, scaleY);
+
+				// 计算居中位置
+				this.offsetX = (containerWidth - imageWidth * this.scale) / 2;
+				this.offsetY = (containerHeight - imageHeight * this.scale) / 2;
+
+				this.redrawCanvas();
+			}
+
+			async saveMask() {
+				if (!this.imageMD5) {
+					showToast('请先选择图片');
+					return;
+				}
+
+				// 下载遮罩文件
+				const link = document.createElement('a');
+				link.download = `${this.imageMD5}_mask.png`;
+				link.href = this.maskCanvas.toDataURL('image/png', 1.0);
+				link.click();
+			}
+
+			// 修改uploadImage方法
+			async uploadImage() {
+				if (!this.originalImage) {
+					showToast('请先选择一张图片');
+					return;
+				}
+				this.isImageUploaded = false; // 标记图片已上传
+				showToast('开始原图图片上传 ... ');
+				// 将原始图片转换为 Blob
+				const response = await fetch(this.originalImage.src);
+				const blob = await response.blob();
+
+				const formData = new FormData();
+				formData.append('file', blob, 'image.png');
+				formData.append('md5', this.imageMD5);  // 添加MD5值
+
+				try {
+					const response = await fetch('/upload?token=' + getToken(), {
+						method: 'POST',
+						body: formData
+					});
+					const result = await response.json();
+					if (result.status === 'success') {
+						showToast('原图上传成功');
+						this.isImageUploaded = true; // 标记图片已上传
+					} else {
+						showToast('原图上传失败: ' + result.message);
+					}
+				} catch (error) {
+					showToast('原图上传出错: ' + error.message);
+				}
+			}
+
+			// 修改uploadMask方法
+			async uploadMask() {
+				if (!this.maskCanvas || !this.imageMD5) {
+					showToast('请先选择图片并创建遮罩');
+					return;
+				}
+
+				// 返回一个新的Promise
+				return new Promise((resolve, reject) => {
+					this.maskCanvas.toBlob(async (blob) => {
+						const formData = new FormData();
+						formData.append('file', blob, 'mask.png');
+						formData.append('md5', this.imageMD5);
+
+						showToast('开始遮罩图片上传 ... ');
+
+						try {
+							const response = await fetch('/upload?token=' + getToken(), {
+								method: 'POST',
+								body: formData
+							});
+							const result = await response.json();
+							if (result.status === 'success') {
+								showToast('遮罩图片上传成功');
+								this.isMaskModified = false;
+								resolve(result); // 成功时resolve
+							} else {
+								showToast('遮罩图片上传失败: ' + result.message);
+								reject(new Error(result.message)); // 失败时reject
+							}
+						} catch (error) {
+							showToast('遮罩图片上传出错: ' + error.message);
+							reject(error); // 出错时reject
+						}
+					}, 'image/png');
+				});
+			}
+
+			// 修改 uploadLama 方法
+			async uploadLama() {
+				if (!this.maskCanvas || !this.imageMD5) {
+					showToast('请先选择图片并创建遮罩');
+					return;
+				}
+
+				// 如果原始图片未上传，则先上传
+				if (!this.isImageUploaded) {
+                    showToast('原图还未上传，正在上传...');
+					await this.uploadImage();
+				}
+
+				// 如果遮罩被修改，先上传遮罩
+				if (this.isMaskModified) {
+					showToast('遮罩已修改，正在上传...');
+					await this.uploadMask();
+				}
+
+				showToast('开始Lama图像修复...',120000);
+				try {
+					const response = await fetch('/lama?token=' + getToken(), {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						body: JSON.stringify({
+							md5: this.imageMD5
+						})
+					});
+
+					const result = await response.json();
+
+					if (result.status === 'success') {
+                        showToast('OK: ' + result.message);
+					    await refreshTaskList(); // 修改为 await 调用
+					} else {
+						showToast('修复失败: ' + result.message);
+					}
+				} catch (error) {
+					showToast('修复出错: ' + error.message);
+				}
+			}
+			move(direction) {
+				if (!this.originalImage) return;
+
+				const moveDistance = {
+					left: -this.canvas.width * 0.01,
+					right: this.canvas.width * 0.01,
+					up: -this.canvas.height * 0.01,
+					down: this.canvas.height * 0.01
+				};
+
+				const distance = moveDistance[direction];
+				if (direction === 'left' || direction === 'right') {
+					this.offsetX += distance;
+				} else {
+					this.offsetY += distance;
+				}
+
+				this.redrawCanvas();
+			}
+
+			showBrushPreview(e) {
+				if (this.editMode === 'move') return;
+
+				const pos = this.getMousePos(e);
+				this.redrawCanvas();
+
+				this.ctx.save();
+				this.ctx.translate(this.offsetX, this.offsetY);
+				this.ctx.scale(this.scale, this.scale);
+
+				this.ctx.beginPath();
+				this.ctx.arc(pos.x, pos.y, this.brushSize / this.scale, 0, Math.PI * 2);
+				this.ctx.strokeStyle = this.editMode === 'add' ? 'rgba(255, 255, 255, 0.8)' : 'rgba(0, 0, 0, 0.8)';
+				this.ctx.lineWidth = 1 / this.scale;
+				this.ctx.stroke();
+
+				this.ctx.restore();
+			}
+
+			// 保存当前状态到历史记录
+			saveToHistory() {
+				const imageData = this.maskCtx.getImageData(0, 0, this.maskCanvas.width, this.maskCanvas.height);
+				this.history.push(imageData);
+				if (this.history.length > this.maxHistoryLength) {
+					this.history.shift(); // 移除最老的记录
+				}
+				// 标记遮罩已被修改
+				this.isMaskModified = true;
+			}
+
+			// 撤销功能
+			undo() {
+				if (this.history.length > 0) {
+					const lastState = this.history.pop();
+					this.maskCtx.putImageData(lastState, 0, 0);
+					this.redrawCanvas();
+					// 标记遮罩已被修改
+					this.isMaskModified = true;
+				}
+			}
+
+			// 清除遮罩功能
+			clearMask() {
+				if (!this.originalImage) {
+					alert('请先选择图片');
+					return;
+				}
+
+				// 保存当前状态到历史记录
+				this.saveToHistory();
+
+				// 清除遮罩为黑色
+				this.maskCtx.fillStyle = '#000';
+				this.maskCtx.fillRect(0, 0, this.maskCanvas.width, this.maskCanvas.height);
+				this.redrawCanvas();
+			}
+
+			async loadTask(md5) {
+				try {
+					// 加载任务时自动折叠面板
+					const taskPanel = document.getElementById('taskPanel');
+					taskPanel.classList.add('collapsed');
+					localStorage.setItem('taskPanelCollapsed', 'true');
+					
+					// 加载原始图片
+					const originalImage = new Image();
+					originalImage.src = `/image/${md5}.jpg?t=${Date.now()}&token=${getToken()}`;
+					
+					await new Promise((resolve, reject) => {
+						originalImage.onload = resolve;
+						originalImage.onerror = () => reject(new Error('加载原始图片失败'));
+					});
+					
+					// 设置MD5和图片
+					this.imageMD5 = md5;
+					this.originalImage = originalImage;
+					this.isImageUploaded = true; // 标记图片已上传
+					
+					// 设置画布尺寸
+					let width = originalImage.width;
+					let height = originalImage.height;
+					
+					// 不用检查是否需要缩放了
+					
+					// 设置画布尺寸
+					this.canvas.width = width;
+					this.canvas.height = height;
+					this.maskCanvas.width = width;
+					this.maskCanvas.height = height;
+					
+					// 加载遮罩
+					try {
+						const maskResponse = await fetch(`/image/${md5}_mask.png?t=${Date.now()}&token=${getToken()}`);
+						if (maskResponse.ok) {
+							const maskBlob = await maskResponse.blob();
+							const maskUrl = URL.createObjectURL(maskBlob);
+							const maskImage = new Image();
+							await new Promise((resolve, reject) => {
+								maskImage.onload = resolve;
+								maskImage.onerror = reject;
+								maskImage.src = maskUrl;
+							});
+							
+							this.maskCtx.drawImage(maskImage, 0, 0, width, height);
+							URL.revokeObjectURL(maskUrl);
+						} else {
+							// 如果遮罩不存在，创建新的黑色遮罩
+							this.maskCtx.fillStyle = '#000';
+							this.maskCtx.fillRect(0, 0, width, height);
+						}
+					} catch (error) {
+						console.error('加载遮罩失败:', error);
+						this.maskCtx.fillStyle = '#000';
+						this.maskCtx.fillRect(0, 0, width, height);
+					}
+					
+					// 计算适应屏幕的缩放比例
+					const container = this.canvas.parentElement;
+					const containerWidth = container.clientWidth;
+					const containerHeight = container.clientHeight;
+					const scaleX = (containerWidth - 40) / width;
+					const scaleY = (containerHeight - 40) / height;
+					this.scale = Math.min(scaleX, scaleY, 1);
+					
+					// 计算居中位置
+					this.offsetX = (containerWidth - width * this.scale) / 2;
+					this.offsetY = 0;
+					
+					this.redrawCanvas();
+					showToast('任务加载成功');
+					
+				} catch (error) {
+					console.error('加载任务失败:', error);
+					showToast('加载任务失败: ' + error.message);
+				}
+			}
+
+			// 添加缩放和平移组合方法
+			zoomAndPan(factor, deltaX, deltaY, centerX, centerY) {
+				const oldScale = this.scale;
+				this.scale *= factor;
+				this.scale = Math.min(Math.max(0.1, this.scale), 10);
+
+				// 调整偏移以保持缩放中心点不变
+				const scaleChange = this.scale - oldScale;
+				this.offsetX -= (centerX * scaleChange);
+				this.offsetY -= (centerY * scaleChange);
+
+				// 应用平移
+				this.offsetX += deltaX;
+				this.offsetY += deltaY;
+
+				requestAnimationFrame(() => this.redrawCanvas());
+			}
+		}
+
+		// 添加全局变量
+		let currentPage = 1;
+		let totalPages = 1;
+
+		// 修改getTaskStatus函数
+		async function getTaskStatus(page = 1) {
+			try {
+				const response = await fetch(`/tasks?page=${page}&token=${getToken()}`);
+				if (!response.ok) {
+                    if (response.status === 401) {
+                        return {error: 'Unauthorized'};
+                    }
+					throw new Error(`HTTP error! status: ${response.status}`);
+				}
+				return await response.json();
+			} catch (error) {
+				console.error('获取任务状态失败:', error);
+				throw error;
+			}
+		}
+
+		// 修改updateTaskList方法
+		function updateTaskList(data) {
+			const taskList = document.getElementById('taskList');
+			const taskCount = document.getElementById('taskCount');
+			const tasks = data.tasks;
+			
+			// 更新任务数量
+			const pendingTasks = Object.values(tasks).filter(t => t.status === 'pending').length;
+			const processingTasks = Object.values(tasks).filter(t => t.status === 'processing').length;
+			taskCount.textContent = `共${data.total}个任务 (${pendingTasks}待处理/${processingTasks}处理中)`;
+			
+			// 生成任务列表HTML
+			const taskItems = Object.entries(tasks).map(([md5, task]) => {
+				const statusText = {
+					'pending': '等待处理',
+					'processing': '处理中',
+					'completed': '已完成',
+					'error': '失败'
+				}[task.status];
+				
+				// 添加原始图片和处理后的图片显示
+				const originalImage = `<img src="/image/${md5}_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}.jpg', false)" title="原始图片">`;
+				const resultImage = task.status === 'completed' ? 
+					`<img src="/image/${md5}_lama_thumb.jpg?t=${Date.now()}" class="task-result" onclick="previewImage('/image/${md5}_lama.jpg', true)" title="处理后图片">` : '';
+				
+				const timeStr = new Date(task.create_time * 1000).toLocaleString();
+				
+				const deleteDisabled = (task.status === 'pending' || task.status === 'processing') ? 'disabled title="处理中不可删除"' : '';
+				return `
+					<div class="task-item">
+						<div class="task-info">
+							<div class="task-header">
+								<span class="task-status ${task.status}" onclick="window.editor.loadTask('${md5}')">${statusText} ${task.progress}%</span>
+								<span class="task-time" onclick="window.editor.loadTask('${md5}')">${timeStr}</span>
+								<button class="delete-btn" onclick="deleteTask('${md5}')" ${deleteDisabled}>删除</button>
+								${task.status === 'completed' ? `<button class="relama-btn" onclick="reLama('${md5}')">再擦一次</button>` : ''}
+							</div>
+						</div>
+						<div class="task-images">
+							${originalImage}
+							${task.status === 'completed' ? '<span class="arrow">→</span>' : ''}
+							${resultImage}
+						</div>
+					</div>
+				`;
+			}).join('');
+			
+    taskList.innerHTML = taskItems || '<div class="no-tasks">暂无任务</div>';
+
+    // 记录当前页是否有处理中任务，供常驻计时器判断
+    hasProcessingOnPage = Object.values(tasks).some(t => t.status === 'pending' || t.status === 'processing');
+			
+			// 更新分页
+			updatePagination(data);
+		}
+		
+		// 添加分页更新函数
+		function updatePagination(data) {
+			const pagination = document.getElementById('taskPagination');
+			currentPage = data.page;
+			totalPages = data.total_pages;
+			
+			let html = '';
+			
+			// 上一页按钮
+			html += `<button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">上一页</button>`;
+			
+			// 页码按钮
+			for (let i = 1; i <= totalPages; i++) {
+				if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+					html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+				} else if (i === currentPage - 3 || i === currentPage + 3) {
+					html += `<span class="page-info">...</span>`;
+				}
+			}
+			
+			// 下一页按钮
+			html += `<button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})">下一页</button>`;
+			
+			// 显示总数
+			html += `<span class="page-info">第${currentPage}/${totalPages}页</span>`;
+			
+			pagination.innerHTML = html;
+		}
+		
+		// 添加页码切换函数
+		async function changePage(page) {
+			if (page < 1 || page > totalPages) return;
+			
+			try {
+				const data = await getTaskStatus(page);
+				updateTaskList(data);
+			} catch (error) {
+				console.error('切换页面失败:', error);
+				showToast('切换页面失败: ' + error.message);
+			}
+		}
+        async function refreshTaskList() {
+            const refreshBtn = document.getElementById('refreshTasksBtn');
+            const taskPanel = document.getElementById('taskPanel');
+            refreshBtn.classList.add('spinning');
+            refreshBtn.disabled = true;
+
+            try {
+                const data = await getTaskStatus(currentPage);
+                if (data.error && data.error === 'Unauthorized') {
+                    showToast('密码错误，请重新输入');
+                    document.querySelector('.container').style.display = 'none';
+                    promptForPassword(); // Re-prompt for password
+                    return;
+                }
+                document.querySelector('.container').style.display = 'flex';
+                updateTaskList(data);
+                // 刷新时自动展开面板
+                taskPanel.classList.remove('collapsed');
+                localStorage.setItem('taskPanelCollapsed', 'false');
+            } catch (error) {
+                console.error('刷新任务列表失败:', error);
+                showToast('刷新任务列表失败: ' + error.message);
+            } finally {
+                setTimeout(() => {
+                    refreshBtn.classList.remove('spinning');
+                    refreshBtn.disabled = false;
+                }, 500);
+            }
+        }
+
+		// 修改刷新按钮事件处理
+		document.getElementById('refreshTasksBtn').addEventListener('click', () => {
+			refreshTaskList();
+		});
+
+		// 页面加载时获取一次任务列表
+		// getTaskStatus(currentPage).then(updateTaskList).catch(error => {
+		// 	console.error('初始化任务列表失败:', error);
+		// 	showToast('获取任务列表失败: ' + error.message);
+		// });
+
+        // 永远运行的计时器：每30秒，如果当前页有处理中任务则查询一次
+        const TASK_POLL_INTERVAL = 30000;
+        let taskPollInFlight = false;
+        let hasProcessingOnPage = false; // 由 updateTaskList 维护
+        setInterval(async () => {
+            if (!hasProcessingOnPage) return; // 没有进行中任务，跳过本次
+            if (taskPollInFlight) return; // 避免并发请求
+            taskPollInFlight = true;
+            try {
+                const data = await getTaskStatus(currentPage); // 仅查询当前页
+                updateTaskList(data);
+            } catch (e) {
+                console.error('自动刷新任务失败:', e);
+            } finally {
+                taskPollInFlight = false;
+            }
+        }, TASK_POLL_INTERVAL);
+
+        // 计时器已常驻，第一次是否请求由 hasProcessingOnPage 决定
+
+		// 初始化ImageMaskEditor
+		window.addEventListener('load', () => {
+			window.editor = new ImageMaskEditor();
+		});
+
+		// 添加任务面板折叠/展开功能
+		document.addEventListener('DOMContentLoaded', function() {
+			promptForPassword();
+			const taskPanel = document.getElementById('taskPanel');
+			const taskHeader = document.getElementById('taskHeader');
+			
+			// 从localStorage获取面板状态
+			const isPanelCollapsed = localStorage.getItem('taskPanelCollapsed') === 'true';
+			if (isPanelCollapsed) {
+				taskPanel.classList.add('collapsed');
+			}
+			
+			// 添加点击事件处理
+			taskHeader.addEventListener('click', function(e) {
+				// 如果点击的是刷新按钮,不处理折叠
+				if (e.target.closest('#refreshTasksBtn')) {
+					return;
+				}
+				
+				taskPanel.classList.toggle('collapsed');
+				// 保存状态到localStorage
+				localStorage.setItem('taskPanelCollapsed', taskPanel.classList.contains('collapsed'));
+			});
+		});
+
+		// 添加全局 showToast 函数
+		function showToast(message, duration = 5000) {
+			const toast = document.getElementById('toast');
+			toast.textContent = message;
+			toast.style.display = 'block';
+			
+			// 清除之前的定时器
+			if (window.toastTimeout) {
+				clearTimeout(window.toastTimeout);
+			}
+			
+			window.toastTimeout = setTimeout(() => {
+				toast.style.display = 'none';
+			}, duration);
+		}
+
+		// 添加删除任务的函数
+		async function deleteTask(md5) {
+			if (!confirm('确定要删除此任务吗？')) {
+				return;
+			}
+			
+			try {
+				const response = await fetch('/delete_task?token=' + getToken(), {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ md5 })
+				});
+				
+				const result = await response.json();
+				if (result.status === 'success') {
+					showToast('任务删除成功');
+					// 刷新任务列表
+					refreshTaskList();
+				} else {
+					showToast('删除失败: ' + result.message);
+				}
+			} catch (error) {
+				console.error('删除任务失败:', error);
+				showToast('删除任务失败: ' + error.message);
+			}
+		}
+
+		// 添加再次Lama的函数
+		async function reLama(md5) {
+			try {
+				// 先复制处理后的图片作为新的原始图片
+				const response = await fetch('/relama?token=' + getToken(), {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ md5 })
+				});
+				
+				const result = await response.json();
+				if (result.status === 'success') {
+					showToast('OK: ' + result.message);
+					await refreshTaskList();
+				} else {
+					showToast('再次Lama失败: ' + result.message);
+				}
+			} catch (error) {
+				console.error('再次Lama失败:', error);
+				showToast('再次Lama失败: ' + error.message);
+			}
+		}
+
+		// 修改图片预览相关函数
+		function previewImage(url, isLama = false) {
+			const modal = document.getElementById('imagePreviewModal');
+			const container = document.getElementById('previewContainer');
+			const previewImageOriginal = document.getElementById('previewImageOriginal');
+			const previewImageLama = document.getElementById('previewImageLama');
+			const loading = document.getElementById('previewLoading');
+			const dots = document.querySelectorAll('.preview-dot');
+			const arrowLeft = document.getElementById('previewArrowLeft');
+			const arrowRight = document.getElementById('previewArrowRight');
+
+			// 添加当前索引变量
+			let currentIndex = isLama ? 1 : 0;
+
+			// 显示模态框和加载提示
+			modal.style.display = 'block';
+			loading.style.display = 'block';
+			container.style.display = 'none';
+
+			// 获取原图和Lama图的URL
+			const md5 = url.split('/').pop().split('.')[0].replace('_lama', '');
+			const originalUrl = `/image/${md5}.jpg?t=${Date.now()}`;
+			const lamaUrl = `/image/${md5}_lama.jpg?t=${Date.now()}`;
+
+			// 加载两张图片
+			let loadedCount = 0;
+			const onImageLoad = () => {
+				loadedCount++;
+				if (loadedCount === 2) {
+					loading.style.display = 'none';
+					container.style.display = 'flex';
+					// 根据传入的isLama参数决定显示哪张图片
+					showPreviewImage(currentIndex);
+				}
+			};
+
+			previewImageOriginal.onload = onImageLoad;
+			previewImageLama.onload = onImageLoad;
+			previewImageOriginal.src = originalUrl;
+			previewImageLama.src = lamaUrl;
+
+			// 禁止页面滚动
+			document.body.style.overflow = 'hidden';
+
+			// 重置容器位置
+			container.style.transform = `translateX(-${currentIndex * 50}%)`;
+			dots.forEach((dot, i) => {
+				if(i === currentIndex) {
+					dot.classList.add('active');
+				} else {
+					dot.classList.remove('active');
+				}
+			});
+
+			// 添加箭头点击事件
+			arrowLeft.onclick = () => {
+				if (currentIndex > 0) {
+					currentIndex--;
+					showPreviewImage(currentIndex);
+				}
+			};
+			arrowRight.onclick = () => {
+				if (currentIndex < 1) {
+					currentIndex++;
+					showPreviewImage(currentIndex);
+				}
+			};
+
+			// 更新箭头状态
+			updateArrowState(currentIndex);
+
+			// 添加触摸事件处理
+			let startX = 0;
+			let startY = 0;
+			let moveX = 0;
+			let moveY = 0;
+			let initialScale = 1;
+			let currentScale = 1;
+
+			modal.addEventListener('touchstart', function(e) {
+				if (e.touches.length === 1) {
+					startX = e.touches[0].clientX;
+					startY = e.touches[0].clientY;
+				} else if (e.touches.length === 2) {
+					initialScale = currentScale;
+					const touch1 = e.touches[0];
+					const touch2 = e.touches[1];
+					const dist = Math.hypot(
+						touch1.clientX - touch2.clientX,
+						touch1.clientY - touch2.clientY
+					);
+					startDist = dist;
+				}
+			});
+
+			modal.addEventListener('touchmove', function(e) {
+				if (e.touches.length === 1) {
+					moveX = e.touches[0].clientX - startX;
+					moveY = e.touches[0].clientY - startY;
+					
+					// 判断滑动方向
+					if (Math.abs(moveX) > Math.abs(moveY)) {
+						// 水平滑动 - 切换图片
+						container.style.transform = `translateX(${-currentIndex * 50}% + ${moveX}px)`;
+						e.preventDefault();
+					} else {
+						// 垂直滑动 - 关闭预览
+						const opacity = 1 - Math.abs(moveY) / (window.innerHeight / 2);
+						modal.style.backgroundColor = `rgba(0, 0, 0, ${opacity})`;
+					}
+				} else if (e.touches.length === 2) {
+					const touch1 = e.touches[0];
+					const touch2 = e.touches[1];
+					const dist = Math.hypot(
+						touch1.clientX - touch2.clientX,
+						touch1.clientY - touch2.clientY
+					);
+					currentScale = initialScale * (dist / startDist);
+					currentScale = Math.min(Math.max(0.5, currentScale), 3);
+					const activeImage = currentIndex === 0 ? previewImageOriginal : previewImageLama;
+					activeImage.style.transform = `translate(-50%, -50%) scale(${currentScale})`;
+				}
+			});
+
+			modal.addEventListener('touchend', function(e) {
+				if (Math.abs(moveY) > Math.abs(moveX) && Math.abs(moveY) > 100) {
+					closePreview();
+				} else if (Math.abs(moveX) > 50) {
+					// 切换到下一张/上一张图片
+					if (moveX > 0 && currentIndex > 0) {
+						currentIndex--;
+					} else if (moveX < 0 && currentIndex < 1) {
+						currentIndex++;
+					}
+					showPreviewImage(currentIndex);
+				} else {
+					// 回到当前图片
+					showPreviewImage(currentIndex);
+				}
+				moveX = 0;
+				moveY = 0;
+			});
+
+			// 添加点击切换功能
+			dots.forEach(dot => {
+				dot.addEventListener('click', function() {
+					currentIndex = parseInt(this.dataset.index);
+					showPreviewImage(currentIndex);
+				});
+			});
+		}
+
+		function showPreviewImage(index) {
+			const container = document.getElementById('previewContainer');
+			const dots = document.querySelectorAll('.preview-dot');
+			
+			container.style.transform = `translateX(-${index * 50}%)`;
+			dots.forEach(dot => dot.classList.remove('active'));
+			dots[index].classList.add('active');
+			
+			// 更新箭头状态
+			updateArrowState(index);
+			
+			// 重置背景和缩放
+			const modal = document.getElementById('imagePreviewModal');
+			modal.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+			document.getElementById('previewImageOriginal').style.transform = 'translate(-50%, -50%) scale(1)';
+			document.getElementById('previewImageLama').style.transform = 'translate(-50%, -50%) scale(1)';
+		}
+
+		// 添加更新箭头状态的函数
+		function updateArrowState(index) {
+			const arrowLeft = document.getElementById('previewArrowLeft');
+			const arrowRight = document.getElementById('previewArrowRight');
+			
+			// 更新左箭头状态
+			if (index === 0) {
+				arrowLeft.classList.add('disabled');
+			} else {
+				arrowLeft.classList.remove('disabled');
+			}
+			
+			// 更新右箭头状态
+			if (index === 1) {
+				arrowRight.classList.add('disabled');
+			} else {
+				arrowRight.classList.remove('disabled');
+			}
+		}
+
+		function closePreview() {
+			const modal = document.getElementById('imagePreviewModal');
+			const previewImageOriginal = document.getElementById('previewImageOriginal');
+			const previewImageLama = document.getElementById('previewImageLama');
+			modal.style.display = 'none';
+			previewImageOriginal.src = '';
+			previewImageLama.src = '';
+			document.body.style.overflow = '';
+		}
+
+		// 添加关闭按钮事件监听
+		document.getElementById('closePreview').addEventListener('click', closePreview);
+	</script>
+</body>
+
+</html>
+<!-- 功能描述(不得删除此段，每次更新后，请更新以下功能描述)：
+1. 图片选择和显示：
+	- 支持选择本地图片文件
+	- 首次加载自动缩放以显示完整图片
+	- 自动居中显示
+	- 保持原始图片比例
+	- 自动限制最大尺寸为1920px
+	- 显示图片原始尺寸和缩放后尺寸
+	- 支持从任务列表加载历史图片及其遮罩
+
+2. 涂抹功能：
+	- 可调节画笔大小（1-500像素）
+	- 支持鼠标和触摸屏操作
+	- 涂抹区域显示为半透明效果
+	- 支持撤销操作（最多50步）
+	- 支持一键清除遮罩
+	- 支持添加/擦除两种模式切换
+
+3. 缩放和平移控制：
+	- 支持放大/缩小查看
+	- 可重置回原始大小
+	- 缩放范围：0.1x - 10x
+	- 支持画布拖动平移
+	- 支持触摸手势操作
+	- 支持适应屏幕显示
+
+4. 智能擦除功能：
+	- 支持一键智能擦除
+	- 显示处理进度和状态
+	- 支持查看原图和处理结果对比
+	- 支持对处理结果再次擦除
+	- 支持删除任务记录
+
+5. 任务管理系统：
+	- 显示所有处理任务列表
+	- 支持分页浏览
+	- 实时显示任务状态和进度
+	- 支持任务面板折叠/展开
+	- 显示任务创建时间
+	- 支持手动刷新任务列表
+	- 显示待处理和处理中的任务数量
+
+6. 移动端支持：
+	- 响应式界面设计
+	- 触摸屏绘制支持
+	- 自适应屏幕大小
+	- 手势操作支持：
+		* 单指操作：根据当前模式执行绘制/擦除/移动
+		* 双指操作：支持缩放和平移画布
+		* 支持多点触控状态自动切换
+
+使用说明：
+1. 点击选择图片上传，图片会自动缩放显示
+2. 选择编辑模式：绘制蒙版/消除蒙版/移动图片
+3. 使用滑块调节画笔大小
+4. 在图片上按住鼠标或触摸拖动进行涂除
+5. 使用缩放按钮或手势调整视图
+6. 点击"智能擦除"开始处理图片
+7. 在任务列表中查看处理进度和结果
+8. 可以对处理结果再次进行擦除
+9. 支持删除不需要的任务记录
+
+-->
