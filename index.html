@@ -680,16 +680,18 @@
 			top: 15px;
 			right: 15px;
 		}
+
 	</style>
 </head>
 
 <body>
-	<div class="container">
+	<div class="container" style="display: none;">
 		<div class="controls">
 			<div class="file-input-container">
 				<input type="file" id="imageInput" accept="image/*">
 				<label for="imageInput" class="file-input-label">选择图片</label>
 			</div>
+			<input type="hidden" id="pwd">
 			<button id="uploadImageLamaBtn" class="lama-btn">一键擦除</button>
 			<div class="brush-controls">
 				<div class="edit-mode-controls">
@@ -761,6 +763,30 @@
 	</div>
 
 	<script>
+		function promptForPassword() {
+			const password = prompt('请输入密码:', '');
+			if (password) {
+				document.getElementById('pwd').value = password;
+				refreshTaskList();
+			} else {
+                // If user cancels the prompt, re-prompt
+                promptForPassword();
+            }
+		}
+
+		
+		function getToken() {
+			const pwd = document.getElementById('pwd').value;
+			const now = new Date();
+			const year = now.getFullYear();
+			const month = (now.getMonth() + 1).toString().padStart(2, '0');
+			const day = now.getDate().toString().padStart(2, '0');
+			const hours = now.getHours().toString().padStart(2, '0');
+			const minutes = now.getMinutes().toString().padStart(2, '0');
+			const timeStr = `${year}-${month}-${day} ${hours}:${minutes}`;
+			return SparkMD5.hash(timeStr + pwd);
+		}
+
 		class ImageMaskEditor {
 			constructor() {
 				this.canvas = document.getElementById('imageCanvas');
@@ -1093,7 +1119,7 @@
 
 							// 尝试从服务器加载遮罩
 							try {
-								const maskResponse = await fetch(`image/${this.imageMD5}_mask.png`);
+								const maskResponse = await fetch(`image/${this.imageMD5}_mask.png?token=` + getToken());
 								if (maskResponse.ok) {
 									// 如果遮罩存在，加载它
 									const maskBlob = await maskResponse.blob();
@@ -1313,7 +1339,7 @@
 				formData.append('md5', this.imageMD5);  // 添加MD5值
 
 				try {
-					const response = await fetch('/upload', {
+					const response = await fetch('/upload?token=' + getToken(), {
 						method: 'POST',
 						body: formData
 					});
@@ -1346,7 +1372,7 @@
 						showToast('开始遮罩图片上传 ... ');
 
 						try {
-							const response = await fetch('/upload', {
+							const response = await fetch('/upload?token=' + getToken(), {
 								method: 'POST',
 								body: formData
 							});
@@ -1388,7 +1414,7 @@
 
 				showToast('开始Lama图像修复...',120000);
 				try {
-					const response = await fetch('/lama', {
+					const response = await fetch('/lama?token=' + getToken(), {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json'
@@ -1496,7 +1522,7 @@
 					
 					// 加载原始图片
 					const originalImage = new Image();
-					originalImage.src = `/image/${md5}.jpg?t=${Date.now()}`;
+					originalImage.src = `/image/${md5}.jpg?t=${Date.now()}&token=${getToken()}`;
 					
 					await new Promise((resolve, reject) => {
 						originalImage.onload = resolve;
@@ -1522,7 +1548,7 @@
 					
 					// 加载遮罩
 					try {
-						const maskResponse = await fetch(`/image/${md5}_mask.png?t=${Date.now()}`);
+						const maskResponse = await fetch(`/image/${md5}_mask.png?t=${Date.now()}&token=${getToken()}`);
 						if (maskResponse.ok) {
 							const maskBlob = await maskResponse.blob();
 							const maskUrl = URL.createObjectURL(maskBlob);
@@ -1593,8 +1619,11 @@
 		// 修改getTaskStatus函数
 		async function getTaskStatus(page = 1) {
 			try {
-				const response = await fetch(`/tasks?page=${page}`);
+				const response = await fetch(`/tasks?page=${page}&token=${getToken()}`);
 				if (!response.ok) {
+                    if (response.status === 401) {
+                        return {error: 'Unauthorized'};
+                    }
 					throw new Error(`HTTP error! status: ${response.status}`);
 				}
 				return await response.json();
@@ -1709,6 +1738,13 @@
 
             try {
                 const data = await getTaskStatus(currentPage);
+                if (data.error && data.error === 'Unauthorized') {
+                    showToast('密码错误，请重新输入');
+                    document.querySelector('.container').style.display = 'none';
+                    promptForPassword(); // Re-prompt for password
+                    return;
+                }
+                document.querySelector('.container').style.display = 'flex';
                 updateTaskList(data);
                 // 刷新时自动展开面板
                 taskPanel.classList.remove('collapsed');
@@ -1730,10 +1766,10 @@
 		});
 
 		// 页面加载时获取一次任务列表
-		getTaskStatus(currentPage).then(updateTaskList).catch(error => {
-			console.error('初始化任务列表失败:', error);
-			showToast('获取任务列表失败: ' + error.message);
-		});
+		// getTaskStatus(currentPage).then(updateTaskList).catch(error => {
+		// 	console.error('初始化任务列表失败:', error);
+		// 	showToast('获取任务列表失败: ' + error.message);
+		// });
 
         // 永远运行的计时器：每30秒，如果当前页有处理中任务则查询一次
         const TASK_POLL_INTERVAL = 30000;
@@ -1762,6 +1798,7 @@
 
 		// 添加任务面板折叠/展开功能
 		document.addEventListener('DOMContentLoaded', function() {
+			promptForPassword();
 			const taskPanel = document.getElementById('taskPanel');
 			const taskHeader = document.getElementById('taskHeader');
 			
@@ -1807,7 +1844,7 @@
 			}
 			
 			try {
-				const response = await fetch('/delete_task', {
+				const response = await fetch('/delete_task?token=' + getToken(), {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'
@@ -1833,7 +1870,7 @@
 		async function reLama(md5) {
 			try {
 				// 先复制处理后的图片作为新的原始图片
-				const response = await fetch('/relama', {
+				const response = await fetch('/relama?token=' + getToken(), {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json'

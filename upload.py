@@ -10,6 +10,7 @@ from PIL import Image
 import numpy as np
 import torch
 import time
+from datetime import datetime, timedelta
 from task_queue import task_queue
 from lama_worker import worker
 
@@ -22,10 +23,41 @@ class UploadHandler(BaseHTTPRequestHandler):
 		normalized_path = os.path.normpath(requested_path)
 		return '..' not in requested_path
 
+	def verify_token(self):
+		try:
+			with open('pwd.txt', 'r') as f:
+				pwd = f.read().strip()
+		except FileNotFoundError:
+			pwd = ""
+
+		parsed_path = urlparse(self.path)
+		query_params = parse_qs(parsed_path.query)
+		token = query_params.get('token', [None])[0]
+
+		if not token:
+			return False
+
+		now = datetime.now()
+		
+		for i in range(-3, 4):
+			check_time = now + timedelta(minutes=i)
+			time_str = check_time.strftime('%Y-%m-%d %H:%M')
+			expected_token = hashlib.md5((time_str + pwd).encode()).hexdigest()
+			if token == expected_token:
+				return True
+		
+		return False
+
 	def do_GET(self):
 		# 解析请求的路径
 		parsed_path = urlparse(self.path)
 		request_path = parsed_path.path
+
+		# Exclude token verification for index.html, spark-md5.min.js and /image/ path
+		if request_path not in ['/', '/index.html', '/spark-md5.min.js'] and not request_path.startswith('/image/'):
+			if not self.verify_token():
+				self.send_error(401, 'Unauthorized')
+				return
 		
 		# 处理任务状态查询
 		if request_path == '/tasks':
@@ -354,6 +386,10 @@ class UploadHandler(BaseHTTPRequestHandler):
 			}
 
 	def do_POST(self):
+		if not self.verify_token():
+			self.send_error(401, 'Unauthorized')
+			return
+
 		# 设置响应头
 		self.send_response(200)
 		self.send_header('Content-Type', 'application/json')
